@@ -1,0 +1,718 @@
+/**
+ * Calcula una nueva orientación basada en la velocidad.
+ * @param {number} current - Orientación actual en radianes.
+ * @param {Vector} velocity - Vector de velocidad.
+ * @returns {number} - Nueva orientación en radianes.
+ */
+function newOrientation(current, velocity) {
+    if (velocity.length() > 0) {
+        // Calcula el ángulo usando atan2. En Phaser, y aumenta hacia abajo.
+        return Math.atan2(velocity.y, velocity.x);
+    } else {
+        // Mantiene la orientación actual si no hay movimiento.
+        return current;
+    }
+}
+
+class Vector {
+    constructor(x = 0, y = 0) { // Cambiado de z a y
+        this.x = x;
+        this.y = y;
+    }
+
+    add(v) {
+        return new Vector(this.x + v.x, this.y + v.y);
+    }
+
+    subtract(v) {
+        return new Vector(this.x - v.x, this.y - v.y);
+    }
+
+    scale(scalar) {
+        return new Vector(this.x * scalar, this.y * scalar);
+    }
+
+    length() {
+        return Math.sqrt(this.x * this.x + this.y * this.y);
+    }
+
+    normalize() {
+        const len = this.length();
+        if (len === 0) return new Vector(0, 0);
+        return new Vector(this.x / len, this.y / len);
+    }
+
+    angle() {
+        return Math.atan2(this.y, this.x); // Ángulo en radianes
+    }
+
+    invertX() {
+        return new Vector(-this.x, this.y);
+    }
+
+    invertY() {
+        return new Vector(this.x, -this.y);
+    }
+}
+
+class SteeringOutput {
+    constructor(linear = new Vector(), angular = 0) {
+        this.linear = linear;
+        this.angular = angular;
+    }
+}
+
+class KinematicSteeringOutput {
+    constructor(velocity = new Vector(), rotation = 0) {
+        this.velocity = velocity;
+        this.rotation = rotation;
+    }
+}
+
+
+class Staticc{
+    constructor(position = new Vector(), orientation){
+        this.position = position;
+        this.orientation = orientation;
+    }
+}
+
+class Anothercharacter{
+    constructor(position = new Vector(), orientation, velocity = new Vector()){
+        this.position = position;
+        this.orientation = orientation;
+        this.velocity =velocity
+    }
+}
+
+
+
+
+// class Kinematic {
+//     constructor(staticc= new Staticc(), velocity, rotation) {
+//         this.position = staticc.position;
+//         this.orientation = staticc.orientation; // en radianes
+//         this.velocity = velocity;
+//         this.rotation = rotation;
+//     }
+
+//     update(steering, time) {
+//         // Actualizar posición
+//         this.position = this.position.add(this.velocity.scale(time));
+//      //   this.orientation += this.rotation * time;
+//         // Actualizar orientación usando la función newOrientation
+//      //   this.orientation = newOrientation(this.orientation, this.velocity);
+//         this.orientation += this.rotation * time;
+    
+
+//         // Verificar que steering no sea null y actualizar la velocidad y rotación basados en steering
+//         if (steering && steering.velocity) {
+//             this.velocity = steering.velocity;
+//         }
+
+//         if (steering && steering.angular !== undefined) {
+//             this.rotation += steering.angular * time;
+//             // Actualizar la orientación basada en la rotación
+//           // this.orientation += this.rotation * time;
+//         }
+//     }
+// }
+
+
+class Kinematic {
+    constructor(staticc= new Staticc(), velocity, rotation) {
+        this.position = staticc.position;
+        this.orientation = staticc.orientation; // en radianes
+        this.velocity = velocity;
+        this.rotation = rotation;
+    }
+
+    update(steering, time) {
+        // Actualizar posición
+        this.position = this.position.add(this.velocity.scale(time));
+        
+        this.orientation += this.rotation * time;
+        
+        // Verificar que steering no sea null y actualizar la velocidad y rotación basados en steering
+        if (steering && steering.linear !== undefined) 
+            this.velocity = this.velocity.add(steering.linear.scale(time));
+        
+        if (steering && steering.angular !== undefined) 
+            this.rotation += steering.angular * time;
+
+        
+    }
+}
+
+
+class KinematicSteeringBehaviors {
+    constructor(staticc= new Staticc(), velocity, rotation) {
+        this.position = staticc.position;
+        this.orientation = staticc.orientation; // en radianes
+        this.velocity = velocity;
+        this.rotation = rotation;
+    }
+
+    update(steering, time, maxSpeed) {
+        // Actualizar posición
+        this.position = this.position.add(this.velocity.scale(time));
+        
+        this.orientation += this.rotation * time;
+        
+        // Verificar que steering no sea null y actualizar la velocidad y rotación basados en steering
+        if (steering && steering.linear !== undefined) 
+            this.velocity = this.velocity.add(steering.linear.scale(time));
+        
+       // if (steering && steering.velocity !== undefined) 
+      //      this.velocity = steering.velocity
+        
+        
+        if (steering && steering.angular !== undefined) 
+            this.rotation += steering.angular * time;
+        
+   //     if (steering && steering.rotation !== undefined) 
+    //        this.rotation += steering.rotation * time;
+
+        if(this.velocity.length()> maxSpeed){
+            this.velocity = this.velocity.normalize()
+            this.velocity = this.velocity.scale(maxSpeed);
+        }
+        
+    }
+}
+
+
+
+class KinematicArrive {
+    constructor(character, target, maxSpeed, radius, timeToTarget = 0.75) {
+        this.character = character;
+        this.target = target;
+        this.maxSpeed = maxSpeed; // Velocidad máxima
+        this.radius = radius; // Rango interior (Radio de satisfacción)
+        this.timeToTarget = timeToTarget; // Tiempo de llegada
+    }
+
+    getSteering() {
+        const result = new KinematicSteeringOutput();
+
+        // Obtener la dirección hacia el objetivo
+        result.velocity = this.target.position.subtract(this.character.position);
+
+        const distance = result.velocity.length(); // Obtener la distancia al objetivo
+
+        // Si estamos dentro del radio interior, el personaje se detiene
+        if (distance < this.radius) {
+            return null; // No hacer nada, detener el movimiento
+        }
+
+        // Ajustar la velocidad para que el personaje llegue en timeToTarget segundos
+        result.velocity = result.velocity.scale(1 / this.timeToTarget);
+
+        // Si la velocidad es mayor que la velocidad máxima, normalizar
+        if (result.velocity.length() > this.maxSpeed) {
+            result.velocity = result.velocity.normalize().scale(this.maxSpeed);
+        }
+
+        // Orientación hacia la dirección de movimiento usando newOrientation
+        this.character.orientation = newOrientation(this.character.orientation, result.velocity);
+
+        result.rotation = 0;
+        return result;
+    }
+}
+
+
+
+class KinematicWander {
+    constructor(character, maxSpeed, maxRotation) {
+        this.character = character;
+        this.maxSpeed = maxSpeed;
+        this.maxRotation = maxRotation;
+    }
+
+    getSteering() {
+        const result = new KinematicSteeringOutput();
+
+        // Convertir la orientación actual en un vector de velocidad usando seno y coseno
+        result.velocity = this.asVector().scale(this.maxSpeed);
+        // Cambiar la orientación aleatoriamente
+        result.rotation = this.randomBinomial() * this.maxRotation;
+
+        return result;
+    }
+
+    // Función que genera un valor aleatorio entre -1 y 1
+    randomBinomial() {
+        return Math.random() - Math.random();
+    }
+
+    asVector() {
+        return new Vector(Math.sin(this.character.orientation), Math.cos(this.character.orientation)).normalize();
+    }
+
+}
+
+
+
+class Seek{
+    constructor(character,target,maxAcceleration){
+        this.character = character // Kinematic
+        this.target = target // Kinematic
+        this.maxAcceleration= maxAcceleration
+
+
+    }
+
+    getSteering(){
+        var result = new SteeringOutput();
+
+        result.linear = this.target.position.subtract(this.character.position)
+
+        result.linear = result.linear.normalize();
+
+        result.linear = result.linear.scale(this.maxAcceleration);
+
+        this.character.orientation = newOrientation(this.character.orientation, this.character.velocity);
+
+        result.angular = 0;
+
+        return result
+    }
+
+
+    
+}
+
+
+class Arrive{
+    constructor(character,target,maxAcceleration, maxSpeed, targetRadius,slowRadius, timeToTarget = 0.1){
+        this.character = character // Kinematic
+        this.target = target // Kinematic
+        this.maxAcceleration= maxAcceleration
+        this.maxSpeed = maxSpeed
+        this.targetRadius = targetRadius
+        this.slowRadius = slowRadius
+        this.timeToTarget =timeToTarget
+    }
+
+    getSteering(){
+        var result = new SteeringOutput();
+        var targetSpeed; 
+        var direccion = this.target.position.subtract(this.character.position)
+
+        var distance = direccion.length() 
+
+
+        if(distance < this.targetRadius)
+            return null;
+
+        if(distance > this.slowRadius)
+            targetSpeed = this.maxSpeed;
+        else
+            targetSpeed = (this.maxSpeed * distance)/this.slowRadius
+
+        
+        var targetVelocity = direccion;
+        targetVelocity = targetVelocity.normalize();
+        targetVelocity = targetVelocity.scale(targetSpeed);
+
+        result.linear = targetVelocity.subtract(this.character.velocity);
+        result.linear = result.linear.scale(1/this.timeToTarget);
+
+       if (result.linear.length()>this.maxAcceleration){
+            result.linear = result.linear.normalize()
+            result.linear = result.linear.scale(this.maxAcceleration);
+       }
+
+       this.character.orientation = newOrientation(this.character.orientation, this.character.velocity);
+
+        result.angular = 0;
+
+        return result
+    }
+}
+
+
+class Aling{
+    constructor(character,target,maxAngularAcceleration, maxRotation, targetRadius,slowRadius, timeToTarget = 0.1){
+        this.character = character // Kinematic
+        this.target = target // Kinematic
+        this.maxAngularAcceleration= maxAngularAcceleration
+        this.maxRotation = maxRotation
+        this.targetRadius = targetRadius
+        this.slowRadius = slowRadius
+        this.timeToTarget =timeToTarget
+    }
+
+    getSteering(){
+        var result = new SteeringOutput();
+        var targetRotation;
+        var rotation = this.target.orientation - this.character.orientation;
+
+        rotation = this.mapToRange(rotation);
+
+        var rotationSize = Math.abs(rotation);
+
+
+        if (rotationSize < this.targetRadius)
+            return null;
+
+        if(rotationSize> this.slowRadius)
+            targetRotation = this.maxRotation;
+        else
+            targetRotation = (this.maxRotation*rotationSize)/this.slowRadius;
+
+        targetRotation = targetRotation * (rotation /rotationSize);
+
+        result.angular = targetRotation - this.character.rotation
+        result.angular = result.angular / this.timeToTarget;
+
+        var angularAcceleration = Math.abs(result.angular);
+
+        if(angularAcceleration > this.maxAngularAcceleration){
+            result.angular = result.angular / angularAcceleration
+            result.angular = result.angular * this.maxAngularAcceleration
+        }
+
+        result.linear= new Vector(0,0);
+
+        return result
+    }
+
+    mapToRange(angle){
+        return (angle + Math.PI) % ( 2* Math.PI) - Math.PI;
+    }
+
+}
+
+
+class VelocityMatch{
+    constructor(character, target,maxAcceleration, timeToTarget=0.1){
+        this.character = character
+        this.target = target
+        this.maxAcceleration = maxAcceleration
+        this.timeToTarget = timeToTarget
+    }
+
+
+    getSteering(){
+        var result = new SteeringOutput()
+
+        result.linear = this.target.velocity.subtract(this.character.velocity)
+
+        result.linear = result.linear.scale(1/this.timeToTarget);
+
+        if(result.linear.length() > this.maxAcceleration){
+            result.linear= result.linear.normalize();
+            result.linear = result.linear.scale(this.maxAcceleration)
+        }
+
+        result.angular = 0;
+
+        return result
+    }
+}
+
+
+
+class Pursue {
+    constructor(character,targetSeek,targetPursue,maxAcceleration,maxPrediction){
+        this.character = character
+        this.target = targetSeek
+        this.maxAcceleration = maxAcceleration
+        this.maxPrediction = maxPrediction
+        this.targetPursue = targetPursue
+
+
+    }
+
+    getSteering(){
+
+    
+        var prediction;
+        var direccion = this.targetPursue.position.subtract(this.character.position);
+
+        var distance = direccion.length();
+
+        var speed = this.character.velocity.length();
+
+        if (speed <= distance /this.maxPrediction){
+            prediction = this.maxPrediction
+        }else{
+            prediction = distance /speed;
+        }
+
+         // Validar si explicitTarget es una variable global
+         if (typeof explicitTarget !== 'undefined') {
+        
+            var new_seek = new Seek(this.character, explicitTarget,this.maxAcceleration);
+
+            new_seek.target.position = new_seek.target.position.add(new_seek.target.velocity.scale(prediction));
+
+            return new_seek.getSteering();
+        } else {
+            throw new Error("explicitTarget no está definido.");
+        }
+
+
+    }
+
+
+}
+
+
+const config = {
+    type: Phaser.AUTO,
+    width: 1200,
+    height: 1200,
+    parent: "container",
+    backgroundsColor : '#fff',
+    scene: {
+        preload: preload,
+        create: create,
+        update: update
+    },
+    physics: {
+        default: 'arcade',
+        arcade: {
+            debug: false
+        }
+    }
+};
+
+const game = new Phaser.Game(config);
+
+let graphics; // Para bordes del mundo
+let screenBorders; // Para bordes fijos en la pantalla
+let spritePerseguidor, spriteObjetivo, spriteWanderer;
+let spritepikachu;
+let kinematicPerseguidor, kinematicObjetivo, kinematicWanderer, kinematicPikachu;
+let initialPositionPerseguidor;
+let initialPositionObjetivo;
+let initialPositionWanderer;
+let seek;
+let arrive;
+let aling;
+let pursue;
+let velocitymatch;
+let arriveBehavior;
+let wanderBehavior;
+let new_steering= new SteeringOutput(new Vector(0,0), 0);
+let explicitTarget = new  Anothercharacter(new Vector(600,300), 0,new Vector(100,0));
+function preload() {
+    this.load.image("pajaro", "./assets/bird.png");
+    this.load.spritesheet('pikachu', './assets/pikachu-2.png', {
+        frameWidth: 35, // ajustado para cubrir el ancho individual
+        frameHeight: 42 // ajustado para el alto de cada frame
+    });
+  
+}
+
+function create() {
+    // Definir los límites del mundo
+    const worldWidth = 800;
+    const worldHeight = 600;
+
+    // Configurar la cámara
+    this.cameras.main.setBounds(0, 0, worldWidth, worldHeight); // Define los límites del mundo
+    this.cameras.main.setBackgroundColor('#ffffff'); // Fondo blanco
+
+    spritepikachu = this.add.sprite(50,200, 'pikachu');
+    spritepikachu.setScale(3);
+
+
+    this.anims.create({
+        key: 'pikachu-walk-up',
+        frames: this.anims.generateFrameNumbers('pikachu', { start: 2, end: 3 }),
+        frameRate: 8,
+        repeat: -1
+    });
+    
+    this.anims.create({
+        key: 'pikachu-walk-down',
+        frames: this.anims.generateFrameNumbers('pikachu', { start: 0, end: 1 }),
+        frameRate: 8,
+        repeat: -1
+    });
+    
+    this.anims.create({
+        key: 'pikachu-walk-left',
+        frames: this.anims.generateFrameNumbers('pikachu', { start: 4, end: 5 }),
+        frameRate: 8,
+        repeat: -1
+    });
+    
+    this.anims.create({
+        key: 'pikachu-walk-right',
+        frames: this.anims.generateFrameNumbers('pikachu', { start: 6, end: 7 }),
+        frameRate: 8,
+        repeat: -1
+    });
+
+
+
+    const initialPositionPikachu = new Staticc(new Vector(spritepikachu.x, spritepikachu.y), 0);
+    const initialVelocityPikachu = new Vector(0, 0); // Inicialmente detenido
+    kinematicPikachu = new Kinematic(initialPositionPikachu, initialVelocityPikachu, 0);
+
+
+
+    cursors = this.input.keyboard.createCursorKeys();
+
+    // Crear el perseguidor en una posición visible inicial
+    // spritePerseguidor = this.add.image(100, 300, 'pajaro');
+    // spritePerseguidor.setOrigin(0.5, 0.5);
+
+    // // Crear el objetivo en una posición fija a la derecha, fuera de la vista inicial
+    // spriteObjetivo = this.add.image(400, 300, 'pajaro');
+    // spriteObjetivo.setOrigin(0.5, 0.5);
+
+    // Crear el tercer personaje, wanderer, debajo del perseguidor
+   // spriteWanderer = this.add.image(100, 400, 'pajaro');
+   // spriteWanderer.setOrigin(0.5, 0.5);
+
+    // Crear los objetos Kinematic
+    // initialPositionPerseguidor =new Staticc( new Vector(spritePerseguidor.x, spritePerseguidor.y),0);
+    // var initialVelocityPerseguidor = new Vector(300, 0); // Inicialmente moviéndose hacia la derecha
+    // kinematicPerseguidor = new KinematicSteeringBehaviors(initialPositionPerseguidor, initialVelocityPerseguidor, 0);
+
+    // initialPositionObjetivo = new Staticc( new Vector(spriteObjetivo.x, spriteObjetivo.y),0);
+    // var initialVelocityObjetivo = new Vector(100, 0); // Objetivo estático
+    // kinematicObjetivo = new Kinematic(initialPositionObjetivo, initialVelocityObjetivo, 0);
+
+    // seek= new Seek( kinematicPerseguidor, kinematicObjetivo, 300);
+
+    // arrive= new Arrive( kinematicPerseguidor, kinematicObjetivo, 100,500,50, 500 ,0.25);
+    // aling= new Aling( kinematicPerseguidor, kinematicObjetivo, 500,1000,0.1, 0.2 ,0.1);
+
+    // velocitymatch = new VelocityMatch( kinematicPerseguidor, kinematicObjetivo, 1000,1);
+
+    // pursue = new Pursue( kinematicPerseguidor, kinematicObjetivo,kinematicObjetivo, 300,5);
+
+
+}
+
+function update(time, delta) {
+    const timeInSeconds = delta / 1000;
+
+    let steeringPikachu = new SteeringOutput(new Vector(0, 0), 0);
+
+    // Definir la aceleración lineal y angular máxima
+    const maxAcceleration = 200; // Ajusta según sea necesario
+    const maxAngularAcceleration = Math.PI; // Radianes por segundo^2
+    // Definir la aceleración lineal basada en las teclas presionadas
+    let isMovingHorizontally = false;
+    let isMovingVertically = false;
+
+    // Movimiento horizontal (izquierda y derecha)
+    if (cursors.left.isDown && cursors.right.isDown) {
+        // Si se presionan izquierda y derecha al mismo tiempo, no hay movimiento horizontal
+        steeringPikachu.linear.x = 0;
+    } else if (cursors.left.isDown) {
+        spritepikachu.anims.play('pikachu-walk-left', true);
+        kinematicPikachu.velocity = new Vector( kinematicPikachu.velocity.x, 0);
+        steeringPikachu.linear.x = -maxAcceleration;
+        isMovingHorizontally = true;
+    } else if (cursors.right.isDown) {
+        spritepikachu.anims.play('pikachu-walk-right', true);
+        kinematicPikachu.velocity = new Vector( kinematicPikachu.velocity.x, 0);
+        steeringPikachu.linear.x = maxAcceleration;
+        isMovingHorizontally = true;
+    } else {
+        steeringPikachu.linear.x = 0;
+    }
+
+    // Si se está moviendo en X, asegurarse de que Y sea 0
+    if (isMovingHorizontally) {
+        steeringPikachu.linear.y = 0; // Forzar Y a 0 si se está moviendo en X
+    } else {
+        // Movimiento vertical (arriba y abajo)
+        if (cursors.up.isDown && cursors.down.isDown) {
+            // Si se presionan arriba y abajo al mismo tiempo, no hay movimiento vertical
+            steeringPikachu.linear.y = 0;
+        } else if (cursors.up.isDown) {
+            spritepikachu.anims.play('pikachu-walk-up', true);
+            kinematicPikachu.velocity = new Vector( 0, kinematicPikachu.velocity.y);
+            steeringPikachu.linear.y = -maxAcceleration;
+            isMovingVertically = true;
+        } else if (cursors.down.isDown) {
+
+            spritepikachu.anims.play('pikachu-walk-down', true);
+            kinematicPikachu.velocity = new Vector( 0, kinematicPikachu.velocity.y);
+            steeringPikachu.linear.y = maxAcceleration;
+            isMovingVertically = true;
+        } else {
+            steeringPikachu.linear.y = 0;
+        }
+    }
+
+    // Si se está moviendo en Y, asegurarse de que X sea 0
+    if (isMovingVertically) {
+        steeringPikachu.linear.x = 0; // Forzar X a 0 si se está moviendo en Y
+    }
+
+    // Si no se presionan teclas o si se presionan teclas opuestas, detener el movimiento
+    if (steeringPikachu.linear.x === 0 && steeringPikachu.linear.y === 0) {
+        kinematicPikachu.velocity = new Vector(0, 0);
+        spritepikachu.anims.stop();  // Detener la animación cuando no se presiona ninguna tecla o cuando se presionan opuestos
+    }
+    
+    
+    // Actualizar la posición y rotación de Pikachu
+    kinematicPikachu.update(steeringPikachu, timeInSeconds, 500);
+    spritepikachu.x = kinematicPikachu.position.x;
+    spritepikachu.y = kinematicPikachu.position.y;
+    spritepikachu.rotation = kinematicPikachu.orientation;
+
+    // Actualizar Comportamientos
+    // ============================
+
+    // Obtener la aceleración lineal de Arrive para el perseguidor
+    // var steering = pursue.getSteering();
+    // if (steering !== null) {
+    //     kinematicPerseguidor.update(steering, timeInSeconds,500);
+    // }
+
+
+    // kinematicObjetivo.update( new_steering, timeInSeconds);
+    
+
+   
+    // // Actualizar posición y rotación de los sprites
+    // spritePerseguidor.x = kinematicPerseguidor.position.x;
+    // spritePerseguidor.y = kinematicPerseguidor.position.y;
+    // spritePerseguidor.rotation = kinematicPerseguidor.orientation;
+
+    // spriteObjetivo.x = kinematicObjetivo.position.x;
+    // spriteObjetivo.y = kinematicObjetivo.position.y;
+    // spriteObjetivo.rotation = kinematicObjetivo.orientation;
+
+    // ============================
+    // Comprobar Bordes y Teletransportar
+    // ============================
+    const worldWidth = 1200;
+    const worldHeight =1200;
+
+    // Función para teletransportar un objeto si sale de los límites
+    function wrapAround(kinematic) {
+        if (kinematic.position.x < 0) {
+            kinematic.position.x = worldWidth;
+        } else if (kinematic.position.x > worldWidth) {
+            kinematic.position.x = 0;
+        }
+
+        if (kinematic.position.y < 0) {
+            kinematic.position.y = worldHeight;
+        } else if (kinematic.position.y > worldHeight) {
+            kinematic.position.y = 0;
+        }
+    }
+
+    // Teletransportar al perseguidor y al wanderer
+//    wrapAround(kinematicPerseguidor);
+    wrapAround(  kinematicPikachu);
+  //  wrapAround(kinematicWanderer);
+
+    // Si deseas teletransportar al objetivo también, descomenta la siguiente línea
+    // wrapAround(kinematicObjetivo);
+}
