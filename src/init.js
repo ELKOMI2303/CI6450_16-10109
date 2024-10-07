@@ -1,3 +1,4 @@
+
 /**
  * Calcula una nueva orientación basada en la velocidad.
  * @param {number} current - Orientación actual en radianes.
@@ -12,6 +13,10 @@ function newOrientation(current, velocity) {
     // Mantiene la orientación actual si no hay movimiento.
     return current;
   }
+}
+
+function mapToRange(angle) {
+  return ((angle + Math.PI) % (2 * Math.PI)) - Math.PI;
 }
 
 class Vector {
@@ -89,34 +94,6 @@ class Anothercharacter {
   }
 }
 
-// class Kinematic {
-//     constructor(staticc= new Staticc(), velocity, rotation) {
-//         this.position = staticc.position;
-//         this.orientation = staticc.orientation; // en radianes
-//         this.velocity = velocity;
-//         this.rotation = rotation;
-//     }
-
-//     update(steering, time) {
-//         // Actualizar posición
-//         this.position = this.position.add(this.velocity.scale(time));
-//      //   this.orientation += this.rotation * time;
-//         // Actualizar orientación usando la función newOrientation
-//      //   this.orientation = newOrientation(this.orientation, this.velocity);
-//         this.orientation += this.rotation * time;
-
-//         // Verificar que steering no sea null y actualizar la velocidad y rotación basados en steering
-//         if (steering && steering.velocity) {
-//             this.velocity = steering.velocity;
-//         }
-
-//         if (steering && steering.angular !== undefined) {
-//             this.rotation += steering.angular * time;
-//             // Actualizar la orientación basada en la rotación
-//           // this.orientation += this.rotation * time;
-//         }
-//     }
-// }
 
 class Kinematic {
   constructor(staticc = new Staticc(), velocity, rotation) {
@@ -160,17 +137,8 @@ class KinematicForWander {
 
     this.orientation += this.rotation * time;
 
-    // Verificar que steering no sea null y actualizar la velocidad y rotación basados en steering
-    if (steering && steering.linear !== undefined)
-      this.velocity = this.velocity.add(steering.linear.scale(time));
-
-    //   if (steering && steering.velocity) {
-    //        this.velocity = steering.velocity;
-    //    }
-    this.velocity = this.velocity.add(this.velocity.scale(time));
-
-    if (steering && steering.angular !== undefined)
-      this.rotation += steering.angular * time;
+    this.velocity = steering.velocity;
+    this.rotation = steering.rotation;
   }
 }
 
@@ -442,6 +410,9 @@ class Arrive {
   }
 }
 
+
+
+
 class Align {
   constructor(
     character,
@@ -466,14 +437,14 @@ class Align {
     var targetRotation;
     var rotation = this.target.orientation - this.character.orientation;
 
-    rotation = this.mapToRange(rotation);
+    rotation = mapToRange(rotation);
 
     var rotationSize = Math.abs(rotation);
 
     if (rotationSize < this.targetRadius) return null;
 
     if (rotationSize > this.slowRadius) targetRotation = this.maxRotation;
-    else targetRotation = (this.maxRotation * rotationSize) / this.slowRadius;
+    else targetRotation = this.maxRotation * (rotationSize / this.slowRadius);
 
     targetRotation = targetRotation * (rotation / rotationSize);
 
@@ -492,77 +463,8 @@ class Align {
     return result;
   }
 
-  mapToRange(angle) {
-    return ((angle + Math.PI) % (2 * Math.PI)) - Math.PI;
-  }
 }
 
-// class Align {
-//   constructor(
-//     character, // Kinematic
-//     target, // Kinematic
-//     maxAngularAcceleration,
-//     maxRotation,
-//     targetRadius,
-//     slowRadius,
-//     timeToTarget = 0.1
-//   ) {
-//     this.character = character; // Kinematic
-//     this.target = target; // Kinematic
-//     this.maxAngularAcceleration = maxAngularAcceleration;
-//     this.maxRotation = maxRotation;
-//     this.targetRadius = targetRadius;
-//     this.slowRadius = slowRadius;
-//     this.timeToTarget = timeToTarget;
-//   }
-
-//   getSteering() {
-//     var result = new SteeringOutput();
-
-//     // Obtener la diferencia de orientación
-//     var rotation = this.target.orientation - this.character.orientation;
-//     rotation = this.mapToRange(rotation);
-
-//     var rotationSize = Math.abs(rotation);
-
-//     // Verificar si ya estamos alineados
-//     if (rotationSize < this.targetRadius) return null;
-
-//     // Calcular la rotación objetivo
-//     var targetRotation;
-//     if (rotationSize > this.slowRadius) {
-//       targetRotation = this.maxRotation;
-//     } else {
-//       targetRotation = (this.maxRotation * rotationSize) / this.slowRadius;
-//     }
-
-//     // Ajustar la rotación objetivo según la dirección
-//     targetRotation *= rotation / rotationSize;
-
-//     // Calcular la aceleración angular
-//     result.angular = targetRotation - this.character.rotation;
-//     result.angular /= this.timeToTarget;
-
-//     // Limitar la aceleración angular
-//     if (Math.abs(result.angular) > this.maxAngularAcceleration) {
-//       result.angular =
-//         (result.angular / Math.abs(result.angular)) *
-//         this.maxAngularAcceleration;
-//     }
-
-//     // No hay movimiento lineal, solo rotación
-//     result.linear = new Vector(0, 0);
-
-//     return result;
-//   }
-
-
-//   mapToRange(angle) {
-//     angle = angle % (2 * Math.PI); 
-//     if (angle > Math.PI) angle -= 2 * Math.PI; 
-//     return angle;
-//   }
-// }
 
 class Face extends Align {
   constructor(
@@ -593,7 +495,7 @@ class Face extends Align {
     }
 
     this.target = explicitTarget;
-    this.target.orientation = Math.atan2(-direction.x, direction.y);
+    this.target.orientation = Math.atan2(direction.y, direction.x);
     return super.getSteering();
   }
 }
@@ -682,31 +584,49 @@ class Evade extends Flee {
   }
 }
 
-
-
-class Wander extends Face{
-  constructor(character,target,maxAngularAcceleration,maxRotation,targetRadius,slowRadius,timeToTarget = 0.1, 
+class Wander extends Face {
+  constructor(
+    character,
+    target,
+    maxAngularAcceleration,
+    maxRotation,
+    targetRadius,
+    slowRadius,
+    timeToTarget = 0.1,
     wanderOffset,
-     wanderRadius,
+    wanderRadius,
     wanderRate,
     wanderOrientation,
-    maxAcceleration){
-    super(character,target,maxAngularAcceleration,maxRotation,targetRadius,slowRadius,timeToTarget = 0.1)
-      this.wanderOffset = wanderOffset
-      this.wanderRadius = wanderRadius
-      this.wanderRate = wanderRate
-      this.wanderOrientation =wanderOrientation
-      this.maxAcceleration = maxAcceleration
+    maxAcceleration
+  ) {
+    super(
+      character,
+      target,
+      maxAngularAcceleration,
+      maxRotation,
+      targetRadius,
+      slowRadius,
+      (timeToTarget = 0.1)
+    );
+    this.wanderOffset = wanderOffset;
+    this.wanderRadius = wanderRadius;
+    this.wanderRate = wanderRate;
+    this.wanderOrientation = wanderOrientation;
+    this.maxAcceleration = maxAcceleration;
   }
 
-  getSteering(){
+  getSteering() {
     var random = this.randomBinomial();
     this.wanderOrientation += random * this.wanderRate;
     var targetOrientation = this.wanderOrientation + this.character.orientation;
     var newAsVector = this.asVector(this.character.orientation);
-    this.target.position = this.character.position.add(newAsVector.scale(this.wanderOffset));
-    newAsVector = this.asVector(targetOrientation)
-    this.target.position = this.target.position.add(newAsVector.scale(this.wanderRadius));
+    this.target.position = this.character.position.add(
+      newAsVector.scale(this.wanderOffset)
+    );
+    newAsVector = this.asVector(targetOrientation);
+    this.target.position = this.target.position.add(
+      newAsVector.scale(this.wanderRadius)
+    );
 
     //Para Ejecutar Seek
     explicitTargetToSeek.position = this.target.position;
@@ -716,17 +636,14 @@ class Wander extends Face{
 
     result.linear = newAsVector.scale(this.maxAcceleration);
 
-    return result
+    return result;
   }
 
   randomBinomial() {
     return Math.random() - Math.random();
   }
   asVector(angle) {
-    return new Vector(
-      Math.sin(angle),
-      Math.cos(angle)
-    ).normalize();
+    return new Vector(Math.sin(angle), Math.cos(angle)).normalize();
   }
 }
 
@@ -781,7 +698,7 @@ var kinematicBird1,
 var kinematicArrive, Kinematicflee, Kinematicwander, dynamicseek, dynamicflee;
 var dynamicarrive, aling, velocitymatching;
 var explicitTarget, face, face2, face3, face4, face5, pursue, evade, wander;
-var explicitTargetToSeek
+var explicitTargetToSeek;
 
 function startPhaserGame(option) {
   // Oculta el menú
@@ -817,9 +734,9 @@ function startPhaserGame(option) {
           ? updateGame9
           : option === "option10"
           ? updateGame10
-          : option === 'option11'
+          : option === "option11"
           ? updateGame11
-          : updateGame12
+          : updateGame12,
     },
   };
   const game = new Phaser.Game(config);
@@ -943,20 +860,19 @@ function startPhaserGame(option) {
       const scale = Math.max(scaleX, scaleY); // Escoge el mayor para cubrir todo
       background.setScale(scale); // Aplica la escala
 
-      bird1 = this.add.sprite(600, 400, "birdu").setScale(1.5);
+      bird1 = this.add.sprite(50, 50, "birdu").setScale(1.5);
 
       bird1.play("fly");
 
       // Crear los objetos Kinematic
-      var positionBird1 = new Staticc(new Vector(bird1.x, bird1.y), 0);
-      var velocityBird1 = new Vector(3, 3); // Inicialmente moviéndose hacia la derecha
-      kinematicBird1 = new KinematicForWander(
-        positionBird1,
-        velocityBird1,
-        0.1
+      var positionBird1 = new Staticc(
+        new Vector(bird1.x, bird1.y),
+        Math.PI / 4
       );
+      var velocityBird1 = new Vector(0, 0); // Inicialmente moviéndose hacia la derecha
+      kinematicBird1 = new KinematicForWander(positionBird1, velocityBird1, 0);
 
-      Kinematicwander = new KinematicWander(kinematicBird1, 100, 0.75);
+      Kinematicwander = new KinematicWander(kinematicBird1, 50, Math.PI / 6);
     } else if (option === "option4") {
       const background = this.add.image(600, 400, "cielo").setOrigin(0.5, 0.5);
 
@@ -1101,15 +1017,13 @@ function startPhaserGame(option) {
         0
       );
 
-      // aling = new Aling( kinematicBird1, kinematicBird2, 0.1,0.6,1.5708, 2.5,0.1);
-
       aling = new Align(
         kinematicBird1,
         kinematicBird2,
-        0.05,
-        0.6,
-        1.0,
-        2.5,
+        Math.PI,
+        Math.PI / 4,
+        0.01,
+        0.1,
         0.1
       );
 
@@ -1183,7 +1097,7 @@ function startPhaserGame(option) {
       bird5.play("fly");
       bird6.play("fly");
       // Crear los objetos Kinematic
-      var positionBird1 = new Staticc(new Vector(bird1.x, bird1.y), 4);
+      var positionBird1 = new Staticc(new Vector(bird1.x, bird1.y), 0);
       var velocityBird1 = new Vector(0, 0); // Inicialmente moviéndose hacia la derecha
       kinematicBird1 = new KinematicSteeringBehaviors(
         positionBird1,
@@ -1191,7 +1105,7 @@ function startPhaserGame(option) {
         0
       );
 
-      var positionBird3 = new Staticc(new Vector(bird3.x, bird3.y), 4);
+      var positionBird3 = new Staticc(new Vector(bird3.x, bird3.y), 0);
       var velocityBird3 = new Vector(0, 0); // Inicialmente moviéndose hacia la derecha
       kinematicBird3 = new KinematicSteeringBehaviors(
         positionBird3,
@@ -1199,7 +1113,7 @@ function startPhaserGame(option) {
         0
       );
 
-      var positionBird4 = new Staticc(new Vector(bird4.x, bird4.y), 4);
+      var positionBird4 = new Staticc(new Vector(bird4.x, bird4.y), 0);
       var velocityBird4 = new Vector(0, 0); // Inicialmente moviéndose hacia la derecha
       kinematicBird4 = new KinematicSteeringBehaviors(
         positionBird4,
@@ -1207,7 +1121,7 @@ function startPhaserGame(option) {
         0
       );
 
-      var positionBird5 = new Staticc(new Vector(bird5.x, bird5.y), 4);
+      var positionBird5 = new Staticc(new Vector(bird5.x, bird5.y), 0);
       var velocityBird5 = new Vector(0, 0); // Inicialmente moviéndose hacia la derecha
       kinematicBird5 = new KinematicSteeringBehaviors(
         positionBird5,
@@ -1215,7 +1129,7 @@ function startPhaserGame(option) {
         0
       );
 
-      var positionBird6 = new Staticc(new Vector(bird6.x, bird6.y), 4);
+      var positionBird6 = new Staticc(new Vector(bird6.x, bird6.y), 0);
       var velocityBird6 = new Vector(0, 0); // Inicialmente moviéndose hacia la derecha
       kinematicBird6 = new KinematicSteeringBehaviors(
         positionBird6,
@@ -1245,50 +1159,50 @@ function startPhaserGame(option) {
       face = new Face(
         kinematicBird1,
         kinematicBird2,
-        0.05, // Aceleración angular máxima
-        Math.PI, // Rotación máxima (45 grados)
-        1.0, // Radio del objetivo
-        2.5, // Radio de desaceleración
+        Math.PI,
+        Math.PI / 4,
+        0.01,
+        0.1,
         0.1
       );
 
       face2 = new Face(
         kinematicBird3,
         kinematicBird2,
-        0.05, // Aceleración angular máxima
-        Math.PI, // Rotación máxima (45 grados)
-        1.0, // Radio del objetivo
-        2.5, // Radio de desaceleración
+        Math.PI,
+        Math.PI / 4,
+        0.01,
+        0.1,
         0.1
       );
 
       face3 = new Face(
         kinematicBird4,
         kinematicBird2,
-        0.05, // Aceleración angular máxima
-        Math.PI, // Rotación máxima (45 grados)
-        1.0, // Radio del objetivo
-        2.5, // Radio de desaceleración
+        Math.PI,
+        Math.PI / 4,
+        0.01,
+        0.1,
         0.1
       );
 
       face4 = new Face(
         kinematicBird5,
         kinematicBird2,
-        0.05, // Aceleración angular máxima
-        Math.PI, // Rotación máxima (45 grados)
-        1.0, // Radio del objetivo
-        2.5, // Radio de desaceleración
+        Math.PI,
+        Math.PI / 4,
+        0.01,
+        0.1,
         0.1
       );
 
       face5 = new Face(
         kinematicBird6,
         kinematicBird2,
-        0.03, // Aceleración angular máxima
-        Math.PI / 4, // Rotación máxima (45 grados)
-        1.0, // Radio del objetivo
-        2.5, // Radio de desaceleración
+        Math.PI,
+        Math.PI / 4,
+        0.01,
+        0.1,
         0.1
       );
 
@@ -1376,7 +1290,6 @@ function startPhaserGame(option) {
         0
       );
 
-
       var positionBird2 = new Staticc(new Vector(bird2.x, bird2.y), 0);
       var velocityBird2 = new Vector(0, 0); // Inicialmente moviéndose hacia la derecha
       kinematicBird2 = new KinematicSteeringBehaviors(
@@ -1385,13 +1298,12 @@ function startPhaserGame(option) {
         0
       );
 
-
       pursue = new Pursue(kinematicBird1, kinematicBird2, 300, 100);
 
       evade = new Evade(kinematicBird2, kinematicBird1, 300, 100);
 
       cursors = this.input.keyboard.createCursorKeys();
-    }else if (option === "option12") {
+    } else if (option === "option12") {
       const background = this.add.image(600, 400, "cielo").setOrigin(0.5, 0.5);
 
       // Escalar el fondo para que cubra la ventana del juego
@@ -1478,9 +1390,6 @@ function startPhaserGame(option) {
         kinematicBird2.rotation
       );
 
-
-      
-
       wander = new Wander(
         kinematicBird2,
         explicitTarget,
@@ -1496,9 +1405,8 @@ function startPhaserGame(option) {
         100
       );
 
-
       cursors = this.input.keyboard.createCursorKeys();
-    } 
+    }
   }
   function updateGame1(time, delta) {
     // KinematicArrive
@@ -2056,12 +1964,13 @@ function startPhaserGame(option) {
     wrapAround(kinematicBird2, true);
   }
   //######################################################################################
+
   function updateGame7(time, delta) {
     var frame = delta / 1000;
 
     var steering = aling.getSteering();
     if (steering !== undefined) {
-      kinematicBird1.update(steering, 300, frame);
+      kinematicBird1.update(steering, frame, 300);
     }
 
     // let steeringBird2 = new SteeringOutput(new Vector(0, 0), 0);
@@ -2150,6 +2059,7 @@ function startPhaserGame(option) {
 
     bird1.x = kinematicBird1.position.x;
     bird1.y = kinematicBird1.position.y;
+
     bird1.rotation = kinematicBird1.orientation;
 
     bird2.x = kinematicBird2.position.x;
@@ -2239,7 +2149,7 @@ function startPhaserGame(option) {
     ) {
       // Podrías implementar una desaceleración suave aquí si lo deseas
       // Por ahora, no aplicamos aceleración
-     // kinematicBird1.velocity = new Vector(0, 0);
+      // kinematicBird1.velocity = new Vector(0, 0);
       kinematicBird2.velocity = new Vector(0, 0);
     }
 
@@ -2272,6 +2182,13 @@ function startPhaserGame(option) {
 
   function updateGame9(time, delta) {
     var frame = delta / 1000;
+
+    
+    explicitTarget = new KinematicSteeringBehaviors(
+      new Staticc(kinematicBird2.position.clone(), kinematicBird2.orientation),
+      kinematicBird2.velocity.clone(),
+      kinematicBird2.rotation
+    );
 
     var steering = face.getSteering();
 
@@ -2313,11 +2230,11 @@ function startPhaserGame(option) {
       steering4 !== undefined &&
       steering5 !== undefined
     ) {
-      kinematicBird1.update(steering, 300, frame);
-      kinematicBird3.update(steering2, 300, frame);
-      kinematicBird4.update(steering3, 300, frame);
-      kinematicBird5.update(steering4, 300, frame);
-      kinematicBird6.update(steering5, 300, frame);
+      kinematicBird1.update(steering, frame,300);
+      kinematicBird3.update(steering2, frame,300);
+      kinematicBird4.update(steering3, frame,300);
+      kinematicBird5.update(steering4, frame,300);
+      kinematicBird6.update(steering5, frame,300);
     }
 
     // let steeringBird2 = new SteeringOutput(new Vector(0, 0), 0);
@@ -2399,21 +2316,15 @@ function startPhaserGame(option) {
 
     kinematicBird2.update(steeringBird2, 400, frame);
 
-    explicitTarget = new KinematicSteeringBehaviors(
-      new Staticc(kinematicBird2.position.clone(), kinematicBird2.orientation),
-      kinematicBird2.velocity.clone(),
-      kinematicBird2.rotation
-    );
-
     kinematicBird2.orientation = newOrientation(
       kinematicBird2.orientation,
       kinematicBird2.velocity
     );
 
-    const correctionFactor = (7 * Math.PI) / 4;
+
     bird1.x = kinematicBird1.position.x;
     bird1.y = kinematicBird1.position.y;
-    bird1.rotation = kinematicBird1.orientation - correctionFactor;
+    bird1.rotation = kinematicBird1.orientation;
 
     bird3.x = kinematicBird3.position.x;
     bird3.y = kinematicBird3.position.y;
@@ -2421,19 +2332,19 @@ function startPhaserGame(option) {
 
     bird4.x = kinematicBird4.position.x;
     bird4.y = kinematicBird4.position.y;
-    bird4.rotation = kinematicBird4.orientation - correctionFactor;
+    bird4.rotation = kinematicBird4.orientation;
 
     bird5.x = kinematicBird5.position.x;
     bird5.y = kinematicBird5.position.y;
-    bird5.rotation = kinematicBird5.orientation - correctionFactor;
+    bird5.rotation = kinematicBird5.orientation ;
 
     bird6.x = kinematicBird6.position.x;
     bird6.y = kinematicBird6.position.y;
-    bird6.rotation = kinematicBird6.orientation - correctionFactor;
+    bird6.rotation = kinematicBird6.orientation ;
 
     bird2.x = kinematicBird2.position.x;
     bird2.y = kinematicBird2.position.y;
-    bird2.rotation = kinematicBird2.orientation - correctionFactor;
+    bird2.rotation = kinematicBird2.orientation;
 
     wrapAround(kinematicBird1);
     wrapAround(kinematicBird2, true);
@@ -2566,16 +2477,10 @@ function startPhaserGame(option) {
   }
 
   function updateGame11(time, delta) {
-
-
     var frame = delta / 1000;
 
-    
     explicitTarget = new KinematicSteeringBehaviors(
-      new Staticc(
-        kinematicBird2.position.clone(),
-        kinematicBird2.orientation
-      ),
+      new Staticc(kinematicBird2.position.clone(), kinematicBird2.orientation),
       kinematicBird2.velocity.clone(),
       kinematicBird2.rotation
     );
@@ -2665,7 +2570,7 @@ function startPhaserGame(option) {
     ) {
       // Podrías implementar una desaceleración suave aquí si lo deseas
       // Por ahora, no aplicamos aceleración
-    //  kinematicBird2.velocity = new Vector(0, 0);
+      //  kinematicBird2.velocity = new Vector(0, 0);
     }
 
     // Asignar la aceleración lineal al steering
@@ -2687,36 +2592,27 @@ function startPhaserGame(option) {
     bird2.rotation = kinematicBird2.orientation;
 
     wrapAround(kinematicBird1, true);
-    wrapAround(kinematicBird2,true);
-
+    wrapAround(kinematicBird2, true);
   }
 
   function updateGame12(time, delta) {
     var frame = delta / 1000;
 
-   
     explicitTarget = new KinematicSteeringBehaviors(
-      new Staticc(
-        kinematicBird2.position.clone(),
-        kinematicBird2.orientation
-      ),
+      new Staticc(kinematicBird2.position.clone(), kinematicBird2.orientation),
       kinematicBird2.velocity.clone(),
       kinematicBird2.rotation
     );
 
     explicitTargetToSeek = new KinematicSteeringBehaviors(
-      new Staticc(
-        kinematicBird2.position.clone(),
-        kinematicBird2.orientation
-      ),
+      new Staticc(kinematicBird2.position.clone(), kinematicBird2.orientation),
       kinematicBird2.velocity.clone(),
       kinematicBird2.rotation
     );
 
     var steering = wander.getSteering();
-    if (steering !== undefined ){
+    if (steering !== undefined) {
       kinematicBird2.update(steering, 300, frame);
-
     }
 
     // let steeringBird2 = new SteeringOutput(new Vector(0, 0), 0);
@@ -2809,12 +2705,9 @@ function startPhaserGame(option) {
       kinematicBird2.velocity
     );
 
-   
-
     bird2.x = kinematicBird2.position.x;
     bird2.y = kinematicBird2.position.y;
     bird2.rotation = kinematicBird2.orientation - correctionFactor;
-
 
     wrapAround(kinematicBird2, true);
   }
@@ -2825,6 +2718,48 @@ function startPhaserGame(option) {
 
     // Mostrar el menú nuevamente
     document.getElementById("menu").style.display = "block";
+  }
+
+
+  function handleInput(deltaSeconds) {
+    let moveX = 0;
+    let moveY = 0;
+  
+    if (this.cursors.left.isDown) {
+      moveX -= 1;
+    }
+    if (this.cursors.right.isDown) {
+      moveX += 1;
+    }
+    if (this.cursors.up.isDown) {
+      moveY -= 1;
+    }
+    if (this.cursors.down.isDown) {
+      moveY += 1;
+    }
+  
+    // Crear un vector de movimiento
+    let movement = new Vector(moveX, moveY);
+  
+    if (movement.length() > 0) {
+      // Calcular el ángulo deseado basado en el movimiento
+      let desiredAngle = movement.angle();
+  
+      // Calcular la diferencia entre el ángulo deseado y la orientación actual
+      let rotationDifference = mapToRange(desiredAngle - this.target.orientation);
+  
+      // Calcular la rotación a aplicar esta actualización
+      let maxRotation = this.targetMaxAngularSpeed * deltaSeconds;
+  
+      if (Math.abs(rotationDifference) < maxRotation) {
+        // Si la diferencia es menor que la rotación máxima, aplicar la rotación necesaria
+        this.target.orientation = (this.target.orientation + rotationDifference) % (2 * Math.PI);
+      } else {
+        // Si la diferencia es mayor, rotar en la dirección correcta por la rotación máxima
+        this.target.orientation += Math.sign(rotationDifference) * maxRotation;
+        this.target.orientation = (this.target.orientation + 2 * Math.PI) % (2 * Math.PI);
+      }
+    }
   }
 }
 
@@ -2837,3 +2772,5 @@ function handleKeyPress(key) {
     lastKeyPressed = key; // Actualizar el estado de la última tecla presionada
   }
 }
+
+
