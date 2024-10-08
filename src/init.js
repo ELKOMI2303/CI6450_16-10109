@@ -734,8 +734,8 @@ class Separation {
   }
 }
 
-const MAP_HEIGHT = 775;
-const  MAP_WIDTH = 1175;
+const MAP_HEIGHT = 700;
+const  MAP_WIDTH = 1150;
 
 class ObstacleAvoidance extends Seek {
   constructor(character,target,maxAcceleration,detector, avoidDistance, lookahead) {
@@ -758,9 +758,11 @@ class ObstacleAvoidance extends Seek {
       }
 
         // Ajustar la nueva posición usando la normal
-      const penetrationDepth = this.character.velocity.length(); // Profundidad de penetración
-      const adjustedPosition = collision.position.subtract(collision.normal).scale(penetrationDepth);
-
+      // const penetrationDepth = this.character.velocity.length(); // Profundidad de penetración
+      // const adjustedPosition = collision.position.subtract(collision.normal.scale(penetrationDepth));
+      var collicion_normal = collision.normal.scale(this.avoidDistance);
+      var adjustedPosition = collision.position.subtract(collicion_normal);
+   
 
       this.target = new KinematicSteeringBehaviors(
           new Staticc(adjustedPosition,0),
@@ -1060,7 +1062,7 @@ function startPhaserGame(option) {
         kinematicBird1,
         kinematicBird2,
         200,
-        1,
+        50,
         0.75
       );
 
@@ -1236,9 +1238,9 @@ function startPhaserGame(option) {
         kinematicBird1,
         kinematicBird2,
         600,
-        6000,
-        25,
-        5,
+        250,
+        75,
+        50,
         0.75
       );
 
@@ -1848,8 +1850,12 @@ function startPhaserGame(option) {
       );
 
 
+      function getRandomBetween50And100() {
+        return Math.floor(Math.random() * (100 - 50 + 1)) + 50;
+     }
+
       var positionBird2 = new Staticc(new Vector(bird2.x, bird2.y), 0);
-      var velocityBird2 = new Vector(50,100); // Inicialmente moviéndose hacia la derecha
+      var velocityBird2 = new Vector(getRandomBetween50And100(),getRandomBetween50And100()); // Inicialmente moviéndose hacia la derecha
       kinematicBird2 = new KinematicSteeringBehaviors(
         positionBird2,
         velocityBird2,
@@ -1890,17 +1896,37 @@ function startPhaserGame(option) {
 
       // 3. Crear obstáculos adicionales
       obstacles = [];
-      for (let i = 0; i < 6; i++) {
-          const x = Phaser.Math.Between(50, 1150);
-          const y = Phaser.Math.Between(50, 750);
-          // Visualmente se mantiene en 55x55, pero el área de colisión es un poco mayor
+      const minDistance = 150; // Distancia mínima entre obstáculos
+      
+      for (let i = 0; i < 10; i++) {
+          let x, y;
+          let validPosition = false;
+      
+          // Intentar generar una posición válida hasta que no esté muy cerca de otros obstáculos
+          while (!validPosition) {
+              x = Phaser.Math.Between(50, 1150);
+              y = Phaser.Math.Between(50, 750);
+      
+              validPosition = true; // Asumir que la posición es válida
+      
+              // Verificar la distancia con respecto a los obstáculos existentes
+              for (let obstacle of obstacles) {
+                  let distance = Phaser.Math.Distance.Between(x, y, obstacle.x, obstacle.y);
+                  if (distance < minDistance) {
+                      validPosition = false; // Posición no válida, demasiado cerca de otro obstáculo
+                      break;
+                  }
+              }
+          }
+      
+          // Agregar el obstáculo una vez que tenga una posición válida
           this.add.image(x, y, 'block').setOrigin(0.5, 0.5).setDisplaySize(55, 55);
-          obstacles.push({ x: x, y: y, width: 70, height: 70 }); // Área de colisión ajustada a 60x60
+          obstacles.push({ x: x, y: y, width: 75, height: 75 }); // Área de colisión ajustada a 70x70
       }
 
       collisiondetector = new CollisionDetector(walls, obstacles);
 
-      obstacleavoidance = new ObstacleAvoidance(kinematicBird2,initial_target,300,collisiondetector,24,96)
+      obstacleavoidance = new ObstacleAvoidance(kinematicBird2,initial_target,1500,collisiondetector,200,60)
 
     }
   }
@@ -1992,7 +2018,7 @@ function startPhaserGame(option) {
     // Asignar la aceleración lineal al steering
     steeringBird2.linear = acceleration;
 
-    kinematicBird2.update(steeringBird2, 400, frame);
+    kinematicBird2.update(steeringBird2, frame,300);
 
     kinematicBird2.orientation = newOrientation(
       kinematicBird2.orientation,
@@ -2097,7 +2123,7 @@ function startPhaserGame(option) {
     // Asignar la aceleración lineal al steering
     steeringBird2.linear = acceleration;
 
-    kinematicBird2.update(steeringBird2, 400, frame);
+    kinematicBird2.update(steeringBird2,frame,300);
 
     kinematicBird2.orientation = newOrientation(
       kinematicBird2.orientation,
@@ -2145,22 +2171,11 @@ function startPhaserGame(option) {
 
     var steering = dynamicseek.getSteering();
 
-    // explicitTarget = new KinematicSteeringBehaviors(
-    //   new Staticc(
-    //     kinematicBird2.position.clone(),
-    //     kinematicBird2.orientation
-    //   ),
-    //   kinematicBird2.velocity.clone(),
-    //   kinematicBird2.rotation
-    // );
-
-    // var steering2 = lwyag.getSteering();
     if (steering !== undefined) {
       kinematicBird1.update(steering, frame,300);
-    //  kinematicBird1.update(steering2,frame,300)
+  
     }
 
-    // let steeringBird2 = new SteeringOutput(new Vector(0, 0), 0);
     let previousKeyX = null; // Guardará la tecla anterior en el eje X
     let previousKeyY = null; // Guardará la tecla anterior en el eje Y
 
@@ -2237,7 +2252,7 @@ function startPhaserGame(option) {
     // Asignar la aceleración lineal al steering
     steeringBird2.linear = acceleration;
 
-    kinematicBird2.update(steeringBird2, 400, frame);
+    kinematicBird2.update(steeringBird2, frame,300);
 
     kinematicBird2.orientation = newOrientation(
       kinematicBird2.orientation,
@@ -2368,7 +2383,7 @@ function startPhaserGame(option) {
 
     var steering = dynamicarrive.getSteering();
     if (steering !== undefined) {
-      kinematicBird1.update(steering, frame,300);
+      kinematicBird1.update(steering, frame , 300);
     }
 
     var maxSpeed = 400;
@@ -2449,7 +2464,7 @@ function startPhaserGame(option) {
     // Asignar la aceleración lineal al steering
     steeringBird2.linear = acceleration;
 
-    kinematicBird2.update(steeringBird2, 500, frame);
+    kinematicBird2.update(steeringBird2, frame,300);
 
     if (kinematicBird2.velocity.length() > maxSpeed) {
       kinematicBird2.velocity = kinematicBird2.velocity.normalize();
@@ -3342,12 +3357,18 @@ function startPhaserGame(option) {
     var steering = obstacleavoidance.getSteering();
 
     if (steering !== undefined ) {
-      kinematicBird2.update(steering, frame,350);
+      kinematicBird2.update(steering, frame,700);
     }
 
-    if(kinematicBird2.velocity.length()<20){
-      kinematicBird2.velocity= kinematicBird2.velocity.normalize().scale(100);
+    if(kinematicBird2.velocity.length()<30){
+      kinematicBird2.velocity = new Vector(-kinematicBird2.velocity.x*6,-kinematicBird2.velocity.y*6);
     }
+    
+
+    kinematicBird2.orientation = newOrientation(
+      kinematicBird2.orientation,
+      kinematicBird2.velocity
+    );
 
       bird2.x = kinematicBird2.position.x;
       bird2.y = kinematicBird2.position.y;
