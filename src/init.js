@@ -132,13 +132,20 @@ class KinematicForWander {
 
   update(steering, time) {
     // Actualizar posición
-    // Actualizar posición
     this.position = this.position.add(this.velocity.scale(time));
 
     this.orientation += this.rotation * time;
 
-    this.velocity = steering.velocity;
-    this.rotation = steering.rotation;
+    // Verificar que steering no sea null y actualizar la velocidad y rotación basados en steering
+    if (steering && steering.linear !== undefined)
+      this.velocity = this.velocity.add(steering.linear.scale(time));
+
+    if (steering && steering.velocity) {
+      this.velocity = steering.velocity;
+    }
+
+    if (steering && steering.angular !== undefined)
+      this.rotation += steering.angular * time;
   }
 }
 
@@ -267,16 +274,19 @@ class KinematicWander {
   }
 
   getSteering() {
-    const result = new KinematicSteeringOutput();
+    let result = new SteeringOutput();
 
-    // Convertir la orientación actual en un vector de velocidad usando seno y coseno
-    var asvector = this.asVector();
-    result.velocity = asvector.scale(this.maxSpeed);
-    // Cambiar la orientación aleatoriamente
-    var random = this.randomBinomial();
-    result.rotation = random * this.maxRotation;
+    // Generar una rotación aleatoria
+    var random = this.randomBinomial()
+    let randomRotation = random * this.maxRotation;
 
-    //this.character.orientation = newOrientation(this.character.orientation, result.velocity);
+    // Actualizar la rotación del personaje
+    this.character.orientation += randomRotation;
+
+    var asVector = this.asVector().scale(this.maxSpeed);
+    // Establecer la nueva velocidad
+    result.linear = asVector;
+    result.angular = randomRotation;
 
     return result;
   }
@@ -288,9 +298,9 @@ class KinematicWander {
 
   asVector() {
     return new Vector(
-      Math.sin(this.character.orientation),
-      Math.cos(this.character.orientation)
-    ).normalize();
+      Math.cos(this.character.orientation),
+      Math.sin(this.character.orientation)
+    );
   }
 }
 
@@ -647,6 +657,57 @@ class Wander extends Face {
   }
 }
 
+class Separation {
+  constructor(character, targets, threshold, maxAcceleration,decayCoefficient  ) {
+    this.character = character;
+    this.targets = targets;
+
+    this.threshold = threshold || 50; // píxeles
+    this.maxAcceleration = maxAcceleration || 1000; // píxeles/s²
+    this.decayCoefficient = decayCoefficient || 1000; // Ajusta según sea necesario
+  }
+
+  getSteering() {
+    const result = new SteeringOutput();
+    let totalRepulsion = new Vector(0, 0);
+
+    for (let target of this.targets) {
+      // No considerar al mismo personaje
+      if (target === this.character) continue;
+
+      // Calcular la dirección y distancia entre el personaje y el target
+      let direction = this.character.position.subtract(target.position);
+      let distance = direction.length();
+
+      if (distance < this.threshold && distance > 0) {
+        // Calcular la fuerza de repulsión usando la ley del cuadrado inverso
+        let strength = Math.min(
+          this.decayCoefficient / (distance * distance),
+          this.maxAcceleration
+        );
+
+        // Normalizar la dirección y escalar por la fuerza
+        let repulsion = direction.normalize().scale(strength);
+
+        // Acumular la repulsión total
+        totalRepulsion = totalRepulsion.add(repulsion);
+      }
+    }
+
+    // Limitar la fuerza total a la aceleración máxima
+    if (totalRepulsion.length() > this.maxAcceleration) {
+      totalRepulsion = totalRepulsion.normalize().scale(this.maxAcceleration);
+    }
+
+    result.linear = totalRepulsion;
+
+    return result;
+  }
+}
+
+
+
+
 var buttons = document.querySelectorAll(".arcade-button");
 buttons.forEach((button) => {
   // Obtenemos el valor del atributo 'data-game-option'
@@ -688,16 +749,23 @@ function wrapAround(kinematic, transportToCenter = false) {
   }
 }
 
-var bird1, bird2, bird3, bird4, bird5, bird6;
+var bird1, bird2, bird3, bird4, bird5, bird6,bird7,bird8,bird9,bird10,bird11;
 var kinematicBird1,
   kinematicBird2,
   kinematicBird3,
   kinematicBird4,
   kinematicBird5,
-  kinematicBird6;
+  kinematicBird6,
+  kinematicBird7,
+  kinematicBird8,
+  kinematicBird9,
+  kinematicBird10,
+  kinematicBird11;
 var kinematicArrive, Kinematicflee, Kinematicwander, dynamicseek, dynamicflee;
 var dynamicarrive, aling, velocitymatching;
-var explicitTarget, face, face2, face3, face4, face5, pursue, evade, wander;
+var explicitTarget, face, face2, face3, face4, face5, pursue, evade, wander 
+var separation1,separation2,separation3,separation4,separation5,separation6,separation7,separation8,separation9,separation10
+var vl1,vl2,vl3,vl4,vl5,vl6,vl7,vl8,vl9,vl10;
 var explicitTargetToSeek;
 
 function startPhaserGame(option) {
@@ -736,7 +804,9 @@ function startPhaserGame(option) {
           ? updateGame10
           : option === "option11"
           ? updateGame11
-          : updateGame12,
+          : option === 'option12'
+          ? updateGame12
+          : updateGame13,
     },
   };
   const game = new Phaser.Game(config);
@@ -1406,8 +1476,171 @@ function startPhaserGame(option) {
       );
 
       cursors = this.input.keyboard.createCursorKeys();
+    } else if (option === "option13") {
+      const background = this.add.image(600, 400, "cielo").setOrigin(0.5, 0.5);
+
+      // Escalar el fondo para que cubra la ventana del juego
+      const scaleX = config.width / background.width; // Escala en X
+      const scaleY = config.height / background.height; // Escala en Y
+      const scale = Math.max(scaleX, scaleY); // Escoge el mayor para cubrir todo
+      background.setScale(scale); // Aplica la escala
+      bird1 = this.add.sprite(500, 400, "birdu").setScale(2);
+      bird2 = this.add.sprite(500, 401, "birdu").setScale(2);
+      bird3 = this.add.sprite(500, 402, "birdu").setScale(2);
+      bird4 = this.add.sprite(500, 403, "birdu").setScale(2);
+
+      bird5 = this.add.sprite(505, 410, "birdu").setScale(2);
+      bird6 = this.add.sprite(505, 411, "birdu").setScale(2);
+      bird7 = this.add.sprite(505, 412, "birdu").setScale(2);
+
+
+      bird8 = this.add.sprite(510, 420, "birdu").setScale(2);
+      bird9 = this.add.sprite(510, 421, "birdu").setScale(2);
+
+      bird10 = this.add.sprite(515, 430, "birdu").setScale(2);
+
+
+      bird11 = this.add.sprite(800, 400, "bird2u").setScale(1.5);
+
+      bird1.play("fly");
+      bird2.play("fly");
+      bird3.play("fly");
+      bird4.play("fly");
+
+      bird5.play("fly");
+      bird6.play("fly");
+      bird7.play("fly");
+
+      bird8.play("fly");
+      bird9.play("fly");
+
+      bird10.play("fly");
+
+      
+      bird11.play("fly2");
+    
+      var positionBird2 = new Staticc(new Vector(bird2.x, bird2.y), 0);
+      var velocityBird2 = new Vector(0, 0); // Inicialmente moviéndose hacia la derecha
+      kinematicBird2 = new KinematicSteeringBehaviors(
+        positionBird2,
+        velocityBird2,
+        0
+      );
+
+      var positionBird1 = new Staticc(new Vector(bird1.x, bird1.y), 0);
+      var velocityBird1 = new Vector(0, 0); // Inicialmente moviéndose hacia la derecha
+      kinematicBird1 = new KinematicSteeringBehaviors(
+        positionBird1,
+        velocityBird1,
+        0
+      );
+
+      var positionBird3 = new Staticc(new Vector(bird3.x, bird3.y), 0);
+      var velocityBird3 = new Vector(0, 0); // Inicialmente moviéndose hacia la derecha
+      kinematicBird3 = new KinematicSteeringBehaviors(
+        positionBird3,
+        velocityBird3,
+        0
+      );
+
+      var positionBird4 = new Staticc(new Vector(bird4.x, bird4.y), 0);
+      var velocityBird4 = new Vector(0, 0); // Inicialmente moviéndose hacia la derecha
+      kinematicBird4 = new KinematicSteeringBehaviors(
+        positionBird4,
+        velocityBird4,
+        0
+      );
+
+      var positionBird5 = new Staticc(new Vector(bird5.x, bird5.y), 0);
+      var velocityBird5 = new Vector(0, 0); // Inicialmente moviéndose hacia la derecha
+      kinematicBird5 = new KinematicSteeringBehaviors(
+        positionBird5,
+        velocityBird5,
+        0
+      );
+
+      var positionBird6 = new Staticc(new Vector(bird6.x, bird6.y), 0);
+      var velocityBird6 = new Vector(0, 0); // Inicialmente moviéndose hacia la derecha
+      kinematicBird6 = new KinematicSteeringBehaviors(
+        positionBird6,
+        velocityBird6,
+        0
+      );
+
+      var positionBird7 = new Staticc(new Vector(bird7.x, bird7.y), 0);
+      var velocityBird7 = new Vector(0, 0); // Inicialmente moviéndose hacia la derecha
+      kinematicBird7 = new KinematicSteeringBehaviors(
+        positionBird7,
+        velocityBird7,
+        0
+      );
+
+      var positionBird8 = new Staticc(new Vector(bird8.x, bird8.y), 0);
+      var velocityBird8 = new Vector(0, 0); // Inicialmente moviéndose hacia la derecha
+      kinematicBird8 = new KinematicSteeringBehaviors(
+        positionBird8,
+        velocityBird8,
+        0
+      );
+
+      var positionBird9 = new Staticc(new Vector(bird9.x, bird9.y), 0);
+      var velocityBird9 = new Vector(0, 0); // Inicialmente moviéndose hacia la derecha
+      kinematicBird9 = new KinematicSteeringBehaviors(
+        positionBird9,
+        velocityBird9,
+        0
+      );
+
+      var positionBird10 = new Staticc(new Vector(bird10.x, bird10.y), 0);
+      var velocityBird10 = new Vector(0, 0); // Inicialmente moviéndose hacia la derecha
+      kinematicBird10 = new KinematicSteeringBehaviors(
+        positionBird10,
+        velocityBird10,
+        0
+      );
+
+
+
+
+
+      var positionBird11 = new Staticc(new Vector(bird11.x, bird11.y), 0);
+      var velocityBird11 = new Vector(0, 0); // Inicialmente moviéndose hacia la derecha
+      kinematicBird11 = new KinematicSteeringBehaviors(
+        positionBird11,
+        velocityBird11,
+        0
+      );
+
+      vl1 = new VelocityMatch(kinematicBird1,kinematicBird11,300,0.75)
+      vl2 = new VelocityMatch(kinematicBird2,kinematicBird11,300,0.75)
+      vl3 = new VelocityMatch(kinematicBird3,kinematicBird11,300,0.75)
+      vl4 = new VelocityMatch(kinematicBird4,kinematicBird11,300,0.75)
+      vl5 = new VelocityMatch(kinematicBird5,kinematicBird11,300,0.75)
+      vl6 = new VelocityMatch(kinematicBird6,kinematicBird11,300,0.75)
+      vl7 = new VelocityMatch(kinematicBird7,kinematicBird11,300,0.75)
+      vl8 = new VelocityMatch(kinematicBird8,kinematicBird11,300,0.75)
+      vl9 = new VelocityMatch(kinematicBird9,kinematicBird11,300,0.75)
+      vl10 = new VelocityMatch(kinematicBird10,kinematicBird11,300,0.75)
+
+
+
+      separation1 = new Separation(kinematicBird1,[kinematicBird2,kinematicBird3,kinematicBird4,kinematicBird5,kinematicBird6,kinematicBird7,kinematicBird8,kinematicBird9,kinematicBird10],600,1000,1000);
+      separation2 = new Separation(kinematicBird2,[kinematicBird1,kinematicBird3,kinematicBird4,kinematicBird5,kinematicBird6,kinematicBird7,kinematicBird8,kinematicBird9,kinematicBird10],600,1000,1000);
+      separation3 = new Separation(kinematicBird3,[kinematicBird1,kinematicBird2,kinematicBird4,kinematicBird5,kinematicBird6,kinematicBird7,kinematicBird8,kinematicBird9,kinematicBird10],600,1000,1000);
+      separation4 = new Separation(kinematicBird4,[kinematicBird1,kinematicBird2,kinematicBird3,kinematicBird5,kinematicBird6,kinematicBird7,kinematicBird8,kinematicBird9,kinematicBird10],600,1000,1000);
+      separation5 = new Separation(kinematicBird5,[kinematicBird1,kinematicBird2,kinematicBird3,kinematicBird4,kinematicBird6,kinematicBird7,kinematicBird8,kinematicBird9,kinematicBird10],600,1000,1000);
+      separation6 = new Separation(kinematicBird6,[kinematicBird1,kinematicBird2,kinematicBird3,kinematicBird4,kinematicBird5,kinematicBird7,kinematicBird8,kinematicBird9,kinematicBird10],600,1000,1000);
+      separation7 = new Separation(kinematicBird7,[kinematicBird1,kinematicBird2,kinematicBird3,kinematicBird4,kinematicBird5,kinematicBird6,kinematicBird8,kinematicBird9,kinematicBird10],600,1000,1000);
+      separation8 = new Separation(kinematicBird8,[kinematicBird1,kinematicBird2,kinematicBird3,kinematicBird4,kinematicBird5,kinematicBird6,kinematicBird7,kinematicBird9,kinematicBird10],600,1000,1000);
+      separation9 = new Separation(kinematicBird9,[kinematicBird1,kinematicBird2,kinematicBird3,kinematicBird4,kinematicBird5,kinematicBird6,kinematicBird7,kinematicBird8,kinematicBird10],600,1000,1000);
+      separation10 = new Separation(kinematicBird10,[kinematicBird1,kinematicBird2,kinematicBird3,kinematicBird4,kinematicBird5,kinematicBird6,kinematicBird7,kinematicBird8,kinematicBird9],600,1000,1000);
+
+
+
+      cursors = this.input.keyboard.createCursorKeys();
     }
   }
+  
   function updateGame1(time, delta) {
     // KinematicArrive
 
@@ -1627,16 +1860,16 @@ function startPhaserGame(option) {
     if (steering !== undefined) {
       kinematicBird1.update(steering, frame);
     }
+    var maxSpeed = 50;
+
+    if(kinematicBird1.velocity.length()>maxSpeed){
+      kinematicBird1.velocity = kinematicBird1.velocity.normalize().scale(maxSpeed);
+    }
 
     bird1.x = kinematicBird1.position.x;
     bird1.y = kinematicBird1.position.y;
     bird1.rotation = kinematicBird1.orientation;
 
-    var maxSpeed = 500;
-    if (kinematicBird1.velocity.length() > maxSpeed) {
-      kinematicBird1.velocity = kinematicBird1.velocity.normalize();
-      kinematicBird1.velocity = kinematicBird1.velocity.scale(maxSpeed);
-    }
 
     wrapAround(kinematicBird1, true);
   }
@@ -1648,7 +1881,7 @@ function startPhaserGame(option) {
 
     var steering = dynamicseek.getSteering();
     if (steering !== undefined) {
-      kinematicBird1.update(steering, 350, frame);
+      kinematicBird1.update(steering, frame,300);
     }
 
     // let steeringBird2 = new SteeringOutput(new Vector(0, 0), 0);
@@ -1754,7 +1987,7 @@ function startPhaserGame(option) {
 
     var steering = dynamicflee.getSteering();
     if (steering !== undefined) {
-      kinematicBird1.update(steering, 350, frame);
+      kinematicBird1.update(steering, frame,300);
     }
 
     // let steeringBird2 = new SteeringOutput(new Vector(0, 0), 0);
@@ -1834,7 +2067,7 @@ function startPhaserGame(option) {
     // Asignar la aceleración lineal al steering
     steeringBird2.linear = acceleration;
 
-    kinematicBird2.update(steeringBird2, 400, frame);
+    kinematicBird2.update(steeringBird2, frame,400);
 
     kinematicBird2.orientation = newOrientation(
       kinematicBird2.orientation,
@@ -1859,7 +2092,7 @@ function startPhaserGame(option) {
 
     var steering = dynamicarrive.getSteering();
     if (steering !== undefined) {
-      kinematicBird1.update(steering, 300, frame);
+      kinematicBird1.update(steering, frame,300);
     }
 
     var maxSpeed = 400;
@@ -2075,7 +2308,7 @@ function startPhaserGame(option) {
 
     var steering = velocitymatching.getSteering();
     if (steering !== undefined) {
-      kinematicBird1.update(steering, 800, frame);
+      kinematicBird1.update(steering, frame,800);
     }
 
     // let steeringBird2 = new SteeringOutput(new Vector(0, 0), 0);
@@ -2156,7 +2389,7 @@ function startPhaserGame(option) {
     // Asignar la aceleración lineal al steering
     steeringBird2.linear = acceleration;
 
-    kinematicBird2.update(steeringBird2, 800, frame);
+    kinematicBird2.update(steeringBird2,frame,800);
 
     kinematicBird1.orientation = newOrientation(
       kinematicBird1.orientation,
@@ -2365,8 +2598,8 @@ function startPhaserGame(option) {
 
     var steering2 = evade.getSteering();
     if (steering !== undefined && steering2 !== undefined) {
-      kinematicBird1.update(steering, 350, frame);
-      kinematicBird3.update(steering2, 350, frame);
+      kinematicBird1.update(steering, frame,350);
+      kinematicBird3.update(steering2, frame,350);
     }
 
     // let steeringBird2 = new SteeringOutput(new Vector(0, 0), 0);
@@ -2446,7 +2679,7 @@ function startPhaserGame(option) {
     // Asignar la aceleración lineal al steering
     steeringBird2.linear = acceleration;
 
-    kinematicBird2.update(steeringBird2, 400, frame);
+    kinematicBird2.update(steeringBird2, frame,350);
 
     explicitTarget = new KinematicSteeringBehaviors(
       new Staticc(kinematicBird2.position.clone(), kinematicBird2.orientation),
@@ -2494,89 +2727,12 @@ function startPhaserGame(option) {
     );
 
     var steering2 = evade.getSteering();
+
     if (steering !== undefined && steering2 !== undefined) {
-      kinematicBird1.update(steering, 350, frame);
-      kinematicBird2.update(steering2, 350, frame);
+      kinematicBird1.update(steering,frame,350);
+      kinematicBird2.update(steering2,frame, 350);
     }
 
-    // let steeringBird2 = new SteeringOutput(new Vector(0, 0), 0);
-    let previousKeyX = null; // Guardará la tecla anterior en el eje X
-    let previousKeyY = null; // Guardará la tecla anterior en el eje Y
-
-    let steeringBird2 = new SteeringOutput();
-
-    // Manejar entradas de teclado para movimiento lineal
-    let acceleration = new Vector(0, 0); // Aceleración inicial
-
-    if (cursors.left.isDown) {
-      if (previousKeyX === "right") {
-        // Si se presionó la tecla opuesta anteriormente, detener el movimiento horizontal
-        acceleration.x = 0;
-      } else {
-        // Acelerar hacia la izquierda
-        acceleration.x = -400; // Valor de aceleración en pixeles por segundo^2 (ajusta según necesites)
-        previousKeyX = "left";
-      }
-    } else if (cursors.right.isDown) {
-      if (previousKeyX === "left") {
-        // Si se presionó la tecla opuesta anteriormente, detener el movimiento horizontal
-        acceleration.x = 0;
-      } else {
-        // Acelerar hacia la derecha
-        acceleration.x = 400; // Valor de aceleración en pixeles por segundo^2 (ajusta según necesites)
-        previousKeyX = "right";
-      }
-    } else {
-      previousKeyX = null; // Resetear si no hay teclas presionadas en el eje X
-    }
-
-    if (cursors.up.isDown) {
-      if (previousKeyY === "down") {
-        // Si se presionó la tecla opuesta anteriormente, detener el movimiento vertical
-        acceleration.y = 0;
-      } else {
-        // Acelerar hacia arriba
-        acceleration.y = -400; // Valor de aceleración en pixeles por segundo^2 (ajusta según necesites)
-        previousKeyY = "up";
-      }
-    } else if (cursors.down.isDown) {
-      if (previousKeyY === "up") {
-        // Si se presionó la tecla opuesta anteriormente, detener el movimiento vertical
-        acceleration.y = 0;
-      } else {
-        // Acelerar hacia abajo
-        acceleration.y = 400; // Valor de aceleración en pixeles por segundo^2 (ajusta según necesites)
-        previousKeyY = "down";
-      }
-    } else {
-      previousKeyY = null; // Resetear si no hay teclas presionadas en el eje Y
-    }
-
-    // Manejar movimientos adyacentes (teclas opuestas simultáneamente)
-    if (cursors.left.isDown && cursors.right.isDown) {
-      acceleration.x = 0;
-    }
-
-    if (cursors.up.isDown && cursors.down.isDown) {
-      acceleration.y = 0;
-    }
-
-    // Si no hay teclas presionadas, no hay aceleración lineal
-    if (
-      !cursors.left.isDown &&
-      !cursors.right.isDown &&
-      !cursors.up.isDown &&
-      !cursors.down.isDown
-    ) {
-      // Podrías implementar una desaceleración suave aquí si lo deseas
-      // Por ahora, no aplicamos aceleración
-      //  kinematicBird2.velocity = new Vector(0, 0);
-    }
-
-    // Asignar la aceleración lineal al steering
-    steeringBird2.linear = acceleration;
-
-    kinematicBird2.update(steeringBird2, 400, frame);
 
     kinematicBird2.orientation = newOrientation(
       kinematicBird2.orientation,
@@ -2712,54 +2868,196 @@ function startPhaserGame(option) {
     wrapAround(kinematicBird2, true);
   }
 
+  function updateGame13(time, delta) {
+    var frame = delta / 1000;
+
+  
+    var steering1 = separation1.getSteering();
+    var steering2 = separation2.getSteering();
+    var steering3= separation3.getSteering();
+    var steering4= separation4.getSteering();
+    var steering5= separation5.getSteering();
+    var steering6= separation6.getSteering();
+    var steering7= separation7.getSteering();
+    var steering8= separation8.getSteering();
+    var steering9= separation9.getSteering();
+    var steering10= separation10.getSteering();
+
+
+    var steeringvl1 = vl1.getSteering();
+    var steeringvl2 = vl2.getSteering();
+    var steeringvl3 = vl3.getSteering();
+    var steeringvl4 = vl4.getSteering();
+    var steeringvl5 = vl5.getSteering();
+    var steeringvl6 = vl6.getSteering();
+    var steeringvl7 = vl7.getSteering();
+    var steeringvl8 = vl8.getSteering();
+    var steeringvl9 = vl9.getSteering();
+    var steeringvl10 = vl10.getSteering();
+
+    var steeringArray = [steering1, steering2, steering3,steering4,steering5,steering6,steering7,steering8,steering9,steering10];
+    var steeringvlArray = [steeringvl1, steeringvl2, steeringvl3,steeringvl4,steeringvl5,steeringvl6,steeringvl7,steeringvl8,steeringvl9,steeringvl10];
+
+    var array_kinematic = [kinematicBird1,kinematicBird2,kinematicBird3,kinematicBird4,kinematicBird5,kinematicBird6,kinematicBird7,kinematicBird8,kinematicBird9,kinematicBird10];
+
+    array_kinematic.forEach((bird, index) => {
+      var steering = steeringArray[index];
+      var steeringvl = steeringvlArray[index];
+  
+      // Generar el steeringtotal para cada bird
+      var steeringtotal = new SteeringOutput(
+          steering.linear.scale(5).add(steeringvl.linear),
+          steering.angular + steeringvl.angular
+      );
+  
+      // Asignar steeringtotal al bird o hacer lo que necesites con él
+      bird.update (steeringtotal,frame,300);
+  });
+
+   
+
+    // let steeringBird2 = new SteeringOutput(new Vector(0, 0), 0);
+    let previousKeyX = null; // Guardará la tecla anterior en el eje X
+    let previousKeyY = null; // Guardará la tecla anterior en el eje Y
+
+    let steeringBird11 = new SteeringOutput();
+
+    // Manejar entradas de teclado para movimiento lineal
+    let acceleration = new Vector(0, 0); // Aceleración inicial
+
+    if (cursors.left.isDown) {
+      if (previousKeyX === "right") {
+        // Si se presionó la tecla opuesta anteriormente, detener el movimiento horizontal
+        acceleration.x = 0;
+      } else {
+        // Acelerar hacia la izquierda
+        acceleration.x = -400; // Valor de aceleración en pixeles por segundo^2 (ajusta según necesites)
+        previousKeyX = "left";
+      }
+    } else if (cursors.right.isDown) {
+      if (previousKeyX === "left") {
+        // Si se presionó la tecla opuesta anteriormente, detener el movimiento horizontal
+        acceleration.x = 0;
+      } else {
+        // Acelerar hacia la derecha
+        acceleration.x = 400; // Valor de aceleración en pixeles por segundo^2 (ajusta según necesites)
+        previousKeyX = "right";
+      }
+    } else {
+      previousKeyX = null; // Resetear si no hay teclas presionadas en el eje X
+    }
+
+    if (cursors.up.isDown) {
+      if (previousKeyY === "down") {
+        // Si se presionó la tecla opuesta anteriormente, detener el movimiento vertical
+        acceleration.y = 0;
+      } else {
+        // Acelerar hacia arriba
+        acceleration.y = -400; // Valor de aceleración en pixeles por segundo^2 (ajusta según necesites)
+        previousKeyY = "up";
+      }
+    } else if (cursors.down.isDown) {
+      if (previousKeyY === "up") {
+        // Si se presionó la tecla opuesta anteriormente, detener el movimiento vertical
+        acceleration.y = 0;
+      } else {
+        // Acelerar hacia abajo
+        acceleration.y = 400; // Valor de aceleración en pixeles por segundo^2 (ajusta según necesites)
+        previousKeyY = "down";
+      }
+    } else {
+      previousKeyY = null; // Resetear si no hay teclas presionadas en el eje Y
+    }
+
+    // Manejar movimientos adyacentes (teclas opuestas simultáneamente)
+    if (cursors.left.isDown && cursors.right.isDown) {
+      acceleration.x = 0;
+    }
+
+    if (cursors.up.isDown && cursors.down.isDown) {
+      acceleration.y = 0;
+    }
+
+    // Si no hay teclas presionadas, no hay aceleración lineal
+    if (
+      !cursors.left.isDown &&
+      !cursors.right.isDown &&
+      !cursors.up.isDown &&
+      !cursors.down.isDown
+    ) {
+      // Podrías implementar una desaceleración suave aquí si lo deseas
+      // Por ahora, no aplicamos aceleración
+      kinematicBird11.velocity = new Vector(0, 0);
+    }
+
+    // Asignar la aceleración lineal al steering
+    steeringBird11.linear = acceleration;
+
+    kinematicBird11.update(steeringBird11, frame,300);
+
+    kinematicBird11.orientation = newOrientation(
+      kinematicBird11.orientation,
+      kinematicBird11.velocity
+    );
+
+    bird2.x = kinematicBird2.position.x;
+    bird2.y = kinematicBird2.position.y;
+    bird2.rotation = kinematicBird2.orientation ;
+
+    bird3.x = kinematicBird3.position.x;
+    bird3.y = kinematicBird3.position.y;
+    bird3.rotation = kinematicBird3.orientation ;
+
+    bird4.x = kinematicBird4.position.x;
+    bird4.y = kinematicBird4.position.y;
+    bird4.rotation = kinematicBird4.orientation ;
+
+    bird5.x = kinematicBird5.position.x;
+    bird5.y = kinematicBird5.position.y;
+    bird5.rotation = kinematicBird5.orientation ;
+
+    bird6.x = kinematicBird6.position.x;
+    bird6.y = kinematicBird6.position.y;
+    bird6.rotation = kinematicBird6.orientation ;
+
+    bird7.x = kinematicBird7.position.x;
+    bird7.y = kinematicBird7.position.y;
+    bird7.rotation = kinematicBird7.orientation ;
+    
+    bird8.x = kinematicBird8.position.x;
+    bird8.y = kinematicBird8.position.y;
+    bird8.rotation = kinematicBird8.orientation ;
+
+    bird9.x = kinematicBird9.position.x;
+    bird9.y = kinematicBird9.position.y;
+    bird9.rotation = kinematicBird9.orientation ;
+
+    bird10.x = kinematicBird10.position.x;
+    bird10.y = kinematicBird10.position.y;
+    bird10.rotation = kinematicBird10.orientation ;
+    
+    bird11.x = kinematicBird11.position.x;
+    bird11.y = kinematicBird11.position.y;
+    bird11.rotation = kinematicBird11.orientation ;
+
+
+    bird1.x = kinematicBird1.position.x;
+    bird1.y = kinematicBird1.position.y;
+    bird1.rotation = kinematicBird1.orientation ;
+
+    wrapAround(kinematicBird1, true);
+    wrapAround(kinematicBird2, true);
+    wrapAround(kinematicBird3, true);
+    wrapAround(kinematicBird4, true);
+    wrapAround(kinematicBird11, true);
+  }
+
   function returnToMenu() {
     // Destruir la instancia del juego
     game.destroy(true);
 
     // Mostrar el menú nuevamente
     document.getElementById("menu").style.display = "block";
-  }
-
-
-  function handleInput(deltaSeconds) {
-    let moveX = 0;
-    let moveY = 0;
-  
-    if (this.cursors.left.isDown) {
-      moveX -= 1;
-    }
-    if (this.cursors.right.isDown) {
-      moveX += 1;
-    }
-    if (this.cursors.up.isDown) {
-      moveY -= 1;
-    }
-    if (this.cursors.down.isDown) {
-      moveY += 1;
-    }
-  
-    // Crear un vector de movimiento
-    let movement = new Vector(moveX, moveY);
-  
-    if (movement.length() > 0) {
-      // Calcular el ángulo deseado basado en el movimiento
-      let desiredAngle = movement.angle();
-  
-      // Calcular la diferencia entre el ángulo deseado y la orientación actual
-      let rotationDifference = mapToRange(desiredAngle - this.target.orientation);
-  
-      // Calcular la rotación a aplicar esta actualización
-      let maxRotation = this.targetMaxAngularSpeed * deltaSeconds;
-  
-      if (Math.abs(rotationDifference) < maxRotation) {
-        // Si la diferencia es menor que la rotación máxima, aplicar la rotación necesaria
-        this.target.orientation = (this.target.orientation + rotationDifference) % (2 * Math.PI);
-      } else {
-        // Si la diferencia es mayor, rotar en la dirección correcta por la rotación máxima
-        this.target.orientation += Math.sign(rotationDifference) * maxRotation;
-        this.target.orientation = (this.target.orientation + 2 * Math.PI) % (2 * Math.PI);
-      }
-    }
   }
 }
 
