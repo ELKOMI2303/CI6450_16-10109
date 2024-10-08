@@ -594,6 +594,35 @@ class Evade extends Flee {
   }
 }
 
+class LookWhereYouAregoing extends Align{
+  constructor( character,
+    target,
+    maxAngularAcceleration,
+    maxRotation,
+    targetRadius,
+    slowRadius,
+    timeToTarget = 0.1){
+    super( character,
+        target,
+        maxAngularAcceleration,
+        maxRotation,
+        targetRadius,
+        slowRadius,
+        timeToTarget = 0.1)
+  }
+
+  getSteering(){
+    var velocity = this.character.velocity
+
+    if(velocity.length()===0){
+      return null
+    }
+
+    this.target.orientation = Math.atan2(velocity.y,velocity.x);
+    return super.getSteering();
+  }
+}
+
 class Wander extends Face {
   constructor(
     character,
@@ -705,6 +734,141 @@ class Separation {
   }
 }
 
+const MAP_HEIGHT = 775;
+const  MAP_WIDTH = 1175;
+
+class ObstacleAvoidance extends Seek {
+  constructor(character,target,maxAcceleration,detector, avoidDistance, lookahead) {
+      super(character,target,maxAcceleration);
+      this.detector = detector;
+      this.avoidDistance = avoidDistance;
+      this.lookahead = lookahead;
+  }
+
+  getSteering() {
+      // 1. Calcular el vector del rayo de colisión.
+      const ray = this.character.velocity.clone().normalize().scale(this.lookahead);
+
+      // 2. Buscar la colisión.
+      const collision = this.detector.getCollision(this.character.position, ray);
+
+      // Si no hay colisión, no hacer nada.
+      if (!collision) {
+          return null;
+      }
+
+        // Ajustar la nueva posición usando la normal
+      const penetrationDepth = this.character.velocity.length(); // Profundidad de penetración
+      const adjustedPosition = collision.position.subtract(collision.normal).scale(penetrationDepth);
+
+
+      this.target = new KinematicSteeringBehaviors(
+          new Staticc(adjustedPosition,0),
+          new Vector(0, 0),
+          0
+      );
+
+      return super.getSteering();
+  }
+}
+
+
+
+class CollisionDetector {
+  constructor(walls, obstacles) {
+      this.walls = walls; // Array de objetos que representan los muros
+      this.obstacles = obstacles; // Array de objetos que representan obstáculos adicionales
+
+
+
+    // Agregar bordes del mapa como paredes
+    this.walls.push({ x: 0, y: MAP_HEIGHT / 2, width: 10, height: MAP_HEIGHT }); // Pared izquierda
+    this.walls.push({ x: MAP_WIDTH, y: MAP_HEIGHT / 2, width: 10, height: MAP_HEIGHT }); // Pared derecha
+    this.walls.push({ x: MAP_WIDTH / 2, y: 0, width: MAP_WIDTH, height: 10 }); // Pared superior
+    this.walls.push({ x: MAP_WIDTH / 2, y: MAP_HEIGHT, width: MAP_WIDTH, height: 10 }); // Pared inferior
+  }
+
+  getCollision(start, ray) {
+      let closestCollision = null;
+      let minDistance = Infinity;
+
+      // Combina paredes y obstáculos para verificar colisiones
+      const allObjects = [...this.walls, ...this.obstacles];
+
+      for (const obj of allObjects) {
+          const collision = this.checkRayCollision(start, ray, obj);
+          if (collision && collision.distance < minDistance) {
+              minDistance = collision.distance;
+              closestCollision = collision;
+          }
+      }
+
+      return closestCollision;
+  }
+
+  checkRayCollision(start, ray, obj) {
+      // Suponiendo que obj tiene propiedades x, y, width, height
+      // Calculamos los límites del rectángulo
+      const rect = {
+          x: obj.x - obj.width / 2,
+          y: obj.y - obj.height / 2,
+          width: obj.width,
+          height: obj.height
+      };
+
+      // Definir los cuatro bordes del rectángulo
+      const edges = [
+          { start: new Vector(rect.x, rect.y), end: new Vector(rect.x + rect.width, rect.y) }, // Top
+          { start: new Vector(rect.x + rect.width, rect.y), end: new Vector(rect.x + rect.width, rect.y + rect.height) }, // Right
+          { start: new Vector(rect.x + rect.width, rect.y + rect.height), end: new Vector(rect.x, rect.y + rect.height) }, // Bottom
+          { start: new Vector(rect.x, rect.y + rect.height), end: new Vector(rect.x, rect.y) } // Left
+      ];
+
+      let closestIntersection = null;
+      let minDistance = Infinity;
+
+      for (const edge of edges) {
+          const intersection = this.getLineIntersection(start, ray.add(start), edge.start, edge.end);
+          if (intersection) {
+              const distance = start.subtract(intersection).length();
+              if (distance < minDistance) {
+                  minDistance = distance;
+                  // Calcula la normal de la colisión
+                  const edgeVector = edge.end.subtract(edge.start).normalize();
+                  const normal = new Vector(-edgeVector.y, edgeVector.x); // Perpendicular
+                  closestIntersection = {
+                      position: intersection,
+                      normal: normal,
+                      distance: distance
+                  };
+              }
+          }
+      }
+
+      return closestIntersection;
+  }
+
+  getLineIntersection(p1, p2, p3, p4) {
+      const denominator = (p1.x - p2.x) * (p3.y - p4.y) - 
+                          (p1.y - p2.y) * (p3.x - p4.x);
+      if (denominator === 0) return null; // Líneas paralelas
+
+      const t = ((p1.x - p3.x) * (p3.y - p4.y) - 
+                 (p1.y - p3.y) * (p3.x - p4.x)) / denominator;
+      const u = ((p1.x - p3.x) * (p1.y - p2.y) - 
+                 (p1.y - p3.y) * (p1.x - p2.x)) / denominator;
+
+      if (t >= 0 && t <= 1 && u >= 0 && u <= 1) {
+          return new Vector(
+              p1.x + t * (p2.x - p1.x),
+              p1.y + t * (p2.y - p1.y)
+          );
+      }
+
+      return null; // No hay intersección
+  }
+}
+
 
 
 
@@ -721,7 +885,7 @@ const worldWidth = 1200;
 const worldHeight = 800;
 
 // Función para teletransportar un objeto si sale de los límites
-function wrapAround(kinematic, transportToCenter = false) {
+function wrapAround(kinematic, transportToCenter = false, randomizePosition = false) {
   if (transportToCenter) {
     // Si el kinematic sale de los límites, lo transportamos al centro
     if (
@@ -730,21 +894,38 @@ function wrapAround(kinematic, transportToCenter = false) {
       kinematic.position.y < 0 ||
       kinematic.position.y > worldHeight
     ) {
-      kinematic.position.x = worldWidth / 2;
-      kinematic.position.y = worldHeight / 2;
+      if (randomizePosition) {
+        // Aparecer en una posición aleatoria
+        kinematic.position.x = Math.random() * worldWidth;
+        kinematic.position.y = Math.random() * worldHeight;
+      } else {
+        // Transportar al centro del mapa
+        kinematic.position.x = worldWidth / 2;
+        kinematic.position.y = worldHeight / 2;
+      }
     }
   } else {
     // Comportamiento de wrap around normal
-    if (kinematic.position.x < 0) {
-      kinematic.position.x = worldWidth;
-    } else if (kinematic.position.x > worldWidth) {
-      kinematic.position.x = 0;
-    }
+    if (kinematic.position.x < 0 || kinematic.position.x > worldWidth || 
+        kinematic.position.y < 0 || kinematic.position.y > worldHeight) {
+      if (randomizePosition) {
+        // Aparecer en una posición aleatoria
+        kinematic.position.x = Math.random() * worldWidth;
+        kinematic.position.y = Math.random() * worldHeight;
+      } else {
+        // Wrap around normal
+        if (kinematic.position.x < 0) {
+          kinematic.position.x = worldWidth;
+        } else if (kinematic.position.x > worldWidth) {
+          kinematic.position.x = 0;
+        }
 
-    if (kinematic.position.y < 0) {
-      kinematic.position.y = worldHeight;
-    } else if (kinematic.position.y > worldHeight) {
-      kinematic.position.y = 0;
+        if (kinematic.position.y < 0) {
+          kinematic.position.y = worldHeight;
+        } else if (kinematic.position.y > worldHeight) {
+          kinematic.position.y = 0;
+        }
+      }
     }
   }
 }
@@ -766,7 +947,7 @@ var dynamicarrive, aling, velocitymatching;
 var explicitTarget, face, face2, face3, face4, face5, pursue, evade, wander 
 var separation1,separation2,separation3,separation4,separation5,separation6,separation7,separation8,separation9,separation10
 var vl1,vl2,vl3,vl4,vl5,vl6,vl7,vl8,vl9,vl10;
-var explicitTargetToSeek;
+var explicitTargetToSeek, walls,obstacles,collisiondetector,obstacleavoidance,initial_target,lwyag;
 
 function startPhaserGame(option) {
   // Oculta el menú
@@ -806,7 +987,9 @@ function startPhaserGame(option) {
           ? updateGame11
           : option === 'option12'
           ? updateGame12
-          : updateGame13,
+          : option === "option13"
+          ? updateGame13
+          : updateGame14,
     },
   };
   const game = new Phaser.Game(config);
@@ -822,6 +1005,8 @@ function startPhaserGame(option) {
     this.load.image("bird2m", "./assets/bird2m.png");
     this.load.image("bird2d", "./assets/bird2d.png");
     this.load.image("bird2u", "./assets/bird2u.png");
+
+    this.load.image('block', './assets/block.png');
   }
 
   function createGame() {
@@ -954,13 +1139,13 @@ function startPhaserGame(option) {
 
       bird1 = this.add.sprite(50, 50, "birdu").setScale(2);
 
-      bird2 = this.add.sprite(1000, 700, "bird2u").setScale(1.5);
+      bird2 = this.add.sprite(600, 700, "bird2u").setScale(1.5);
       bird1.play("fly");
       bird2.play("fly2");
 
       // Crear los objetos Kinematic
       var positionBird1 = new Staticc(new Vector(bird1.x, bird1.y), 0);
-      var velocityBird1 = new Vector(300, 0); // Inicialmente moviéndose hacia la derecha
+      var velocityBird1 = new Vector(75, 0); // Inicialmente moviéndose hacia la derecha
       kinematicBird1 = new KinematicSteeringBehaviors(
         positionBird1,
         velocityBird1,
@@ -975,7 +1160,9 @@ function startPhaserGame(option) {
         0
       );
 
-      dynamicseek = new Seek(kinematicBird1, kinematicBird2, 200);
+      dynamicseek = new Seek(kinematicBird1, kinematicBird2, 100);
+
+  
 
       cursors = this.input.keyboard.createCursorKeys();
     } else if (option === "option5") {
@@ -1370,6 +1557,7 @@ function startPhaserGame(option) {
 
       pursue = new Pursue(kinematicBird1, kinematicBird2, 300, 100);
 
+
       evade = new Evade(kinematicBird2, kinematicBird1, 300, 100);
 
       cursors = this.input.keyboard.createCursorKeys();
@@ -1638,6 +1826,82 @@ function startPhaserGame(option) {
 
 
       cursors = this.input.keyboard.createCursorKeys();
+    }else if(option === "option14"){
+
+      const background = this.add.image(600, 400, "cielo").setOrigin(0.5, 0.5);
+        
+      // Escalar el fondo para que cubra la ventana del juego
+      const scaleX = this.sys.game.config.width / background.width;
+      const scaleY = this.sys.game.config.height / background.height;
+      const scale = Math.max(scaleX, scaleY);
+      background.setScale(scale);
+
+  
+      bird2 = this.add.sprite(600, 400, "bird2u").setScale(1.5);
+  
+      bird2.play("fly2");
+
+      initial_target =new KinematicSteeringBehaviors(
+        new Staticc(new Vector(0,0),0),
+        new Vector(0,0),
+        0
+      );
+
+
+      var positionBird2 = new Staticc(new Vector(bird2.x, bird2.y), 0);
+      var velocityBird2 = new Vector(50,100); // Inicialmente moviéndose hacia la derecha
+      kinematicBird2 = new KinematicSteeringBehaviors(
+        positionBird2,
+        velocityBird2,
+        0
+      );
+
+      // 2. Crear muros
+      const blockSize = 16;   
+      const wallPositions = [
+          { x: 0, y: 0, width: 1200, height: blockSize }, // Top wall
+          { x: 0, y: 784, width: 1200, height: blockSize }, // Bottom wall
+          { x: 0, y: 0, width: blockSize, height: 800 }, // Left wall
+          { x: 1184, y: 0, width: blockSize, height: 800 }, // Right wall
+      ];
+
+      walls = [];
+
+      wallPositions.forEach(pos => {
+          const numBlocks = Math.floor(pos.width / blockSize);
+          for (let i = 0; i < numBlocks; i++) {
+              const x = pos.x + i * blockSize + (pos.width > pos.height ? blockSize / 2 : 0);
+              const y = pos.y + (pos.height > pos.width ? i * blockSize + blockSize / 2 : 0);
+              this.add.image(x, y, 'block').setOrigin(0.5, 0.5);
+              walls.push({ x: x, y: y, width: blockSize+10, height: blockSize+10 });
+          }
+
+          // Para muros verticales, ajustar la posición
+          if (pos.width === blockSize) {
+              const numBlocksVertical = Math.floor(pos.height / blockSize);
+              for (let j = 0; j < numBlocksVertical; j++) {
+                  const x = pos.x + blockSize / 2;
+                  const y = pos.y + j * blockSize + blockSize / 2;
+                  this.add.image(x, y, 'block').setOrigin(0.5, 0.5);
+                  walls.push({ x: x, y: y, width: blockSize+10, height: blockSize+10 });
+              }
+          }
+      });
+
+      // 3. Crear obstáculos adicionales
+      obstacles = [];
+      for (let i = 0; i < 6; i++) {
+          const x = Phaser.Math.Between(50, 1150);
+          const y = Phaser.Math.Between(50, 750);
+          // Visualmente se mantiene en 55x55, pero el área de colisión es un poco mayor
+          this.add.image(x, y, 'block').setOrigin(0.5, 0.5).setDisplaySize(55, 55);
+          obstacles.push({ x: x, y: y, width: 70, height: 70 }); // Área de colisión ajustada a 60x60
+      }
+
+      collisiondetector = new CollisionDetector(walls, obstacles);
+
+      obstacleavoidance = new ObstacleAvoidance(kinematicBird2,initial_target,300,collisiondetector,24,96)
+
     }
   }
   
@@ -1880,8 +2144,20 @@ function startPhaserGame(option) {
     var frame = delta / 1000;
 
     var steering = dynamicseek.getSteering();
+
+    // explicitTarget = new KinematicSteeringBehaviors(
+    //   new Staticc(
+    //     kinematicBird2.position.clone(),
+    //     kinematicBird2.orientation
+    //   ),
+    //   kinematicBird2.velocity.clone(),
+    //   kinematicBird2.rotation
+    // );
+
+    // var steering2 = lwyag.getSteering();
     if (steering !== undefined) {
       kinematicBird1.update(steering, frame,300);
+    //  kinematicBird1.update(steering2,frame,300)
     }
 
     // let steeringBird2 = new SteeringOutput(new Vector(0, 0), 0);
@@ -1976,7 +2252,7 @@ function startPhaserGame(option) {
     bird2.y = kinematicBird2.position.y;
     bird2.rotation = kinematicBird2.orientation;
 
-    wrapAround(kinematicBird1, true);
+    wrapAround(kinematicBird1);
     wrapAround(kinematicBird2);
   }
 
@@ -2717,8 +2993,8 @@ function startPhaserGame(option) {
       kinematicBird2.velocity.clone(),
       kinematicBird2.rotation
     );
-
     var steering = pursue.getSteering();
+
 
     explicitTarget = new KinematicSteeringBehaviors(
       new Staticc(kinematicBird1.position.clone(), kinematicBird1.orientation),
@@ -2729,8 +3005,8 @@ function startPhaserGame(option) {
     var steering2 = evade.getSteering();
 
     if (steering !== undefined && steering2 !== undefined) {
-      kinematicBird1.update(steering,frame,350);
-      kinematicBird2.update(steering2,frame, 350);
+      kinematicBird1.update(steering,350,frame);
+      kinematicBird2.update(steering2, 350,frame);
     }
 
 
@@ -2748,124 +3024,124 @@ function startPhaserGame(option) {
     bird2.rotation = kinematicBird2.orientation;
 
     wrapAround(kinematicBird1, true);
-    wrapAround(kinematicBird2, true);
+    wrapAround(kinematicBird2, false,true);
   }
 
   function updateGame12(time, delta) {
-    var frame = delta / 1000;
+    // var frame = delta / 1000;
 
-    explicitTarget = new KinematicSteeringBehaviors(
-      new Staticc(kinematicBird2.position.clone(), kinematicBird2.orientation),
-      kinematicBird2.velocity.clone(),
-      kinematicBird2.rotation
-    );
+    // explicitTarget = new KinematicSteeringBehaviors(
+    //   new Staticc(kinematicBird2.position.clone(), kinematicBird2.orientation),
+    //   kinematicBird2.velocity.clone(),
+    //   kinematicBird2.rotation
+    // );
 
-    explicitTargetToSeek = new KinematicSteeringBehaviors(
-      new Staticc(kinematicBird2.position.clone(), kinematicBird2.orientation),
-      kinematicBird2.velocity.clone(),
-      kinematicBird2.rotation
-    );
+    // explicitTargetToSeek = new KinematicSteeringBehaviors(
+    //   new Staticc(kinematicBird2.position.clone(), kinematicBird2.orientation),
+    //   kinematicBird2.velocity.clone(),
+    //   kinematicBird2.rotation
+    // );
 
-    var steering = wander.getSteering();
-    if (steering !== undefined) {
-      kinematicBird2.update(steering, 300, frame);
-    }
+    // var steering = wander.getSteering();
+    // if (steering !== undefined) {
+    //   kinematicBird2.update(steering, 300, frame);
+    // }
 
-    // let steeringBird2 = new SteeringOutput(new Vector(0, 0), 0);
-    let previousKeyX = null; // Guardará la tecla anterior en el eje X
-    let previousKeyY = null; // Guardará la tecla anterior en el eje Y
+    // // let steeringBird2 = new SteeringOutput(new Vector(0, 0), 0);
+    // let previousKeyX = null; // Guardará la tecla anterior en el eje X
+    // let previousKeyY = null; // Guardará la tecla anterior en el eje Y
 
-    let steeringBird2 = new SteeringOutput();
+    // let steeringBird2 = new SteeringOutput();
 
-    // Manejar entradas de teclado para movimiento lineal
-    let acceleration = new Vector(0, 0); // Aceleración inicial
+    // // Manejar entradas de teclado para movimiento lineal
+    // let acceleration = new Vector(0, 0); // Aceleración inicial
 
-    if (cursors.left.isDown) {
-      if (previousKeyX === "right") {
-        // Si se presionó la tecla opuesta anteriormente, detener el movimiento horizontal
-        acceleration.x = 0;
-      } else {
-        // Acelerar hacia la izquierda
-        acceleration.x = -400; // Valor de aceleración en pixeles por segundo^2 (ajusta según necesites)
-        previousKeyX = "left";
-      }
-    } else if (cursors.right.isDown) {
-      if (previousKeyX === "left") {
-        // Si se presionó la tecla opuesta anteriormente, detener el movimiento horizontal
-        acceleration.x = 0;
-      } else {
-        // Acelerar hacia la derecha
-        acceleration.x = 400; // Valor de aceleración en pixeles por segundo^2 (ajusta según necesites)
-        previousKeyX = "right";
-      }
-    } else {
-      previousKeyX = null; // Resetear si no hay teclas presionadas en el eje X
-    }
+    // if (cursors.left.isDown) {
+    //   if (previousKeyX === "right") {
+    //     // Si se presionó la tecla opuesta anteriormente, detener el movimiento horizontal
+    //     acceleration.x = 0;
+    //   } else {
+    //     // Acelerar hacia la izquierda
+    //     acceleration.x = -400; // Valor de aceleración en pixeles por segundo^2 (ajusta según necesites)
+    //     previousKeyX = "left";
+    //   }
+    // } else if (cursors.right.isDown) {
+    //   if (previousKeyX === "left") {
+    //     // Si se presionó la tecla opuesta anteriormente, detener el movimiento horizontal
+    //     acceleration.x = 0;
+    //   } else {
+    //     // Acelerar hacia la derecha
+    //     acceleration.x = 400; // Valor de aceleración en pixeles por segundo^2 (ajusta según necesites)
+    //     previousKeyX = "right";
+    //   }
+    // } else {
+    //   previousKeyX = null; // Resetear si no hay teclas presionadas en el eje X
+    // }
 
-    if (cursors.up.isDown) {
-      if (previousKeyY === "down") {
-        // Si se presionó la tecla opuesta anteriormente, detener el movimiento vertical
-        acceleration.y = 0;
-      } else {
-        // Acelerar hacia arriba
-        acceleration.y = -400; // Valor de aceleración en pixeles por segundo^2 (ajusta según necesites)
-        previousKeyY = "up";
-      }
-    } else if (cursors.down.isDown) {
-      if (previousKeyY === "up") {
-        // Si se presionó la tecla opuesta anteriormente, detener el movimiento vertical
-        acceleration.y = 0;
-      } else {
-        // Acelerar hacia abajo
-        acceleration.y = 400; // Valor de aceleración en pixeles por segundo^2 (ajusta según necesites)
-        previousKeyY = "down";
-      }
-    } else {
-      previousKeyY = null; // Resetear si no hay teclas presionadas en el eje Y
-    }
+    // if (cursors.up.isDown) {
+    //   if (previousKeyY === "down") {
+    //     // Si se presionó la tecla opuesta anteriormente, detener el movimiento vertical
+    //     acceleration.y = 0;
+    //   } else {
+    //     // Acelerar hacia arriba
+    //     acceleration.y = -400; // Valor de aceleración en pixeles por segundo^2 (ajusta según necesites)
+    //     previousKeyY = "up";
+    //   }
+    // } else if (cursors.down.isDown) {
+    //   if (previousKeyY === "up") {
+    //     // Si se presionó la tecla opuesta anteriormente, detener el movimiento vertical
+    //     acceleration.y = 0;
+    //   } else {
+    //     // Acelerar hacia abajo
+    //     acceleration.y = 400; // Valor de aceleración en pixeles por segundo^2 (ajusta según necesites)
+    //     previousKeyY = "down";
+    //   }
+    // } else {
+    //   previousKeyY = null; // Resetear si no hay teclas presionadas en el eje Y
+    // }
 
-    // Manejar movimientos adyacentes (teclas opuestas simultáneamente)
-    if (cursors.left.isDown && cursors.right.isDown) {
-      acceleration.x = 0;
-    }
+    // // Manejar movimientos adyacentes (teclas opuestas simultáneamente)
+    // if (cursors.left.isDown && cursors.right.isDown) {
+    //   acceleration.x = 0;
+    // }
 
-    if (cursors.up.isDown && cursors.down.isDown) {
-      acceleration.y = 0;
-    }
+    // if (cursors.up.isDown && cursors.down.isDown) {
+    //   acceleration.y = 0;
+    // }
 
-    // Si no hay teclas presionadas, no hay aceleración lineal
-    if (
-      !cursors.left.isDown &&
-      !cursors.right.isDown &&
-      !cursors.up.isDown &&
-      !cursors.down.isDown
-    ) {
-      // Podrías implementar una desaceleración suave aquí si lo deseas
-      // Por ahora, no aplicamos aceleración
-      kinematicBird2.velocity = new Vector(0, 0);
-    }
+    // // Si no hay teclas presionadas, no hay aceleración lineal
+    // if (
+    //   !cursors.left.isDown &&
+    //   !cursors.right.isDown &&
+    //   !cursors.up.isDown &&
+    //   !cursors.down.isDown
+    // ) {
+    //   // Podrías implementar una desaceleración suave aquí si lo deseas
+    //   // Por ahora, no aplicamos aceleración
+    //   kinematicBird2.velocity = new Vector(0, 0);
+    // }
 
-    // Asignar la aceleración lineal al steering
-    steeringBird2.linear = acceleration;
+    // // Asignar la aceleración lineal al steering
+    // steeringBird2.linear = acceleration;
 
-    kinematicBird2.update(steeringBird2, 400, frame);
+    // kinematicBird2.update(steeringBird2, 400, frame);
 
-    explicitTarget = new KinematicSteeringBehaviors(
-      new Staticc(kinematicBird2.position.clone(), kinematicBird2.orientation),
-      kinematicBird2.velocity.clone(),
-      kinematicBird2.rotation
-    );
+    // explicitTarget = new KinematicSteeringBehaviors(
+    //   new Staticc(kinematicBird2.position.clone(), kinematicBird2.orientation),
+    //   kinematicBird2.velocity.clone(),
+    //   kinematicBird2.rotation
+    // );
 
-    kinematicBird2.orientation = newOrientation(
-      kinematicBird2.orientation,
-      kinematicBird2.velocity
-    );
+    // kinematicBird2.orientation = newOrientation(
+    //   kinematicBird2.orientation,
+    //   kinematicBird2.velocity
+    // );
 
-    bird2.x = kinematicBird2.position.x;
-    bird2.y = kinematicBird2.position.y;
-    bird2.rotation = kinematicBird2.orientation - correctionFactor;
+    // bird2.x = kinematicBird2.position.x;
+    // bird2.y = kinematicBird2.position.y;
+    // bird2.rotation = kinematicBird2.orientation - correctionFactor;
 
-    wrapAround(kinematicBird2, true);
+    // wrapAround(kinematicBird2, true);
   }
 
   function updateGame13(time, delta) {
@@ -3049,8 +3325,36 @@ function startPhaserGame(option) {
     wrapAround(kinematicBird2, true);
     wrapAround(kinematicBird3, true);
     wrapAround(kinematicBird4, true);
+    wrapAround(kinematicBird5, true);
+    wrapAround(kinematicBird6, true);
+    wrapAround(kinematicBird7, true);
+    wrapAround(kinematicBird8, true);
+    wrapAround(kinematicBird9, true);
+    wrapAround(kinematicBird10, true);
     wrapAround(kinematicBird11, true);
   }
+
+  function updateGame14(time, delta){
+
+    const frame = delta / 1000;
+
+        // Obtener la salida de steering
+    var steering = obstacleavoidance.getSteering();
+
+    if (steering !== undefined ) {
+      kinematicBird2.update(steering, frame,350);
+    }
+
+    if(kinematicBird2.velocity.length()<20){
+      kinematicBird2.velocity= kinematicBird2.velocity.normalize().scale(100);
+    }
+
+      bird2.x = kinematicBird2.position.x;
+      bird2.y = kinematicBird2.position.y;
+      bird2.rotation = kinematicBird2.orientation;
+  }
+
+
 
   function returnToMenu() {
     // Destruir la instancia del juego
